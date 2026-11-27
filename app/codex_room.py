@@ -90,8 +90,13 @@ def find_cli(name):
     if found:
         return found
     home = Path.home()
-    for folder in (home / ".local/bin", home / ".claude/local", home / ".npm-global/bin",
-                   Path("/opt/homebrew/bin"), Path("/usr/local/bin")):
+    folders = (home / ".local/bin", home / ".claude/local", home / ".npm-global/bin",
+               Path("/opt/homebrew/bin"), Path("/usr/local/bin"))
+    if name == "codex" and sys.platform == "darwin":
+        folders += tuple(root / app / "Contents/Resources"
+                         for root in (Path("/Applications"), home / "Applications")
+                         for app in ("ChatGPT.app", "Codex.app"))
+    for folder in folders:
         candidate = folder / name
         if candidate.is_file() and candidate.stat().st_mode & 0o111:
             return str(candidate)

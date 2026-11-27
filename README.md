@@ -20,7 +20,7 @@ Read and organize your AI agent skills in a cozy library.
 
 會讀：`~/.codex/skills/*/SKILL.md`、`~/.codex/skills/.system/*/SKILL.md`、`~/.codex/AGENTS.md`。導讀由 Codex 寫。
 
-首次開啟全新的 Codex 書房時，若已登入的本機 Codex CLI 可用，書房會自動批次產生缺少的中文導讀，底部會顯示進度。生成中斷時，已完成的導讀會保留，可按「讓 Codex 寫中文導讀」接著補完。
+首次開啟全新的 Codex 書房時，若本機 Codex 已登入且可執行，書房會自動批次產生缺少的中文導讀，底部會顯示進度。Mac 上只安裝桌面版的同事，可以直接用位於「應用程式」資料夾的 ChatGPT 或 Codex 桌面版所附的 Codex，無須另外安裝 CLI。生成中斷時，已完成的導讀會保留，可按「讓 Codex 寫中文導讀」接著補完。
 
 ### 用 Claude 的人
 
