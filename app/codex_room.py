@@ -104,6 +104,17 @@ def find_cli(name):
         candidate = folder / name
         if candidate.is_file() and candidate.stat().st_mode & 0o111:
             return str(candidate)
+    if name == "claude" and sys.platform == "darwin":
+        # The Claude desktop app downloads its own Claude Code, outside PATH:
+        # ~/Library/Application Support/Claude/claude-code/<version>/<build>/claude.app/Contents/MacOS/claude
+        bundled = home / "Library/Application Support/Claude/claude-code"
+        candidates = [c for pattern in ("*/*/claude.app/Contents/MacOS/claude", "*/claude")
+                      for c in bundled.glob(pattern) if c.is_file() and c.stat().st_mode & 0o111]
+        if candidates:
+            def version(c):
+                head = c.relative_to(bundled).parts[0]
+                return tuple(int(x) if x.isdigit() else 0 for x in head.split("."))
+            return str(max(candidates, key=lambda c: (version(c), c.stat().st_mtime)))
     return None
 
 
