@@ -1172,7 +1172,7 @@ async function doImport() {
 /* ---------- Chinese guides ---------- */
 const tq = {running: false, done: 0, total: 0};
 async function translateOne(s) {
-  const prompt = `你在幫一位不太熟 AI 的同事看懂他的 Codex Skill（給 AI 的工作規範）。讀下面原文，只回傳 JSON，內容全部用繁體中文（台灣用語），句子短、白話、不用術語：
+  const prompt = `你在幫一位不太熟 AI 的同事看懂他的 AI Skill（給 AI 的工作規範）。讀下面原文，只回傳 JSON，內容全部用繁體中文（台灣用語），句子短、白話、不用術語：
 {"alias":"4 到 8 個字的中文短名","zone":"support、writing、tools、foundation 其中之一","one":"一句話：它要 AI 做什麼","when":"什麼情況會用到","summary":"兩三句重點","important":"最重要的一到三條規則","caution":"容易誤會、或不能做的事","importance":1到5的整數（規則有多硬、出錯影響多大）,"priority":1到5的整數（和其他規範同時適用時應該多優先遵守，全域規範或安全規範較高）}
 zone：support=客服、Agent、知識庫、客戶服務；writing=文章、文件、交接、寫作風格；tools=工具、測試、程式、自動化；foundation=來源確認、備份、全域約定、Skill 管理。
 只根據原文，不確定就寫「原文沒寫」。不要照抄原文裡被遮蔽的內容。
