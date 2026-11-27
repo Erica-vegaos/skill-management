@@ -462,7 +462,7 @@ kbd{display:inline-block;min-width:22px;padding:0 5px;border-radius:5px;border:1
       <button data-mood="day">日光</button><button data-mood="warm">暖燈</button><button data-mood="night">深夜</button>
     </div>
     <button class="iconbtn" id="sound" aria-label="音效">♪</button>
-    <button class="iconbtn fbbtn" id="fbb" aria-label="回饋給作者">💬<span class="dotn" id="fbn" hidden></span></button>
+    <button class="iconbtn fbbtn" id="fbb" aria-label="回饋給作者" hidden>💬<span class="dotn" id="fbn" hidden></span></button>
     <button class="iconbtn" id="mineb" aria-label="我的書房">⚙</button>
   </header>
 
@@ -773,7 +773,7 @@ async function boot() {
   try { dbx = await window.claude?.use?.('db'); } catch {}
   try { user = dbx ? await window.claude.use('user') : null; uid = user ? await user.id() : null; } catch {}
   if (dbx && uid) {
-    db = dbx; base = `data/users/${uid}/lib`; setSync(true); myUid = uid; userApi = user;
+    db = dbx; $('fbb').hidden = false; base = `data/users/${uid}/lib`; setSync(true); myUid = uid; userApi = user;
     try { isOwner = !!(await user.isOwner()); } catch {}
     if (isOwner) db.collection('feedback').onSnapshot(snap => {
       fbItems = []; snap.docs.forEach(d => ((d.data() || {}).items || []).forEach(it => fbItems.push({...it, uid: d.id})));
