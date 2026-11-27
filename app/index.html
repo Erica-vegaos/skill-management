@@ -128,6 +128,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--brass);outline-
 .st{align-self:center;font-size:11px;padding:3px 8px;border-radius:99px;white-space:nowrap;background:var(--paper-2);color:var(--muted)}
 .st.keep{background:#dcefe2;color:#24583a}.st.revise{background:#f7e3cc;color:#7d4710}.st.retire{background:#e7e2db;color:#5d554b}.st.stale{background:#f6d9d2;color:#8e2f1b}
 .bang{color:var(--alert);font-weight:800}
+.src{display:inline-block;margin-left:6px;padding:0 6px;border-radius:5px;font-size:10.5px;font-weight:700;vertical-align:2px;background:#e9e3f5;color:#4b3f86}.src.codex{background:#e3eef3;color:#2c5266}
 .book .t strong .bang{display:inline}
 .uline{display:flex;align-items:center;gap:5px;font-style:normal;font-size:11.5px;color:var(--muted);margin-top:2px}.uline i{width:7px;height:7px;border-radius:50%;flex:none}
 .empty{padding:30px 10px;text-align:center;color:var(--muted)}
@@ -496,6 +497,7 @@ kbd{display:inline-block;min-width:22px;padding:0 5px;border-radius:5px;border:1
     <button id="unib">宇宙</button>
     <button id="shelf">書架</button>
     <button id="askq" aria-label="待解釋">?<span class="n" id="askn">0</span></button>
+    <button class="go" id="trb" hidden>寫中文導讀 <span class="n" id="trn">0</span></button>
   </nav>
   <div class="sync" id="sync"><span class="dot"></span><span id="synctext">連線中…</span></div>
 </div>
@@ -1295,6 +1297,11 @@ function render() {
   $('readn').textContent = readPool().length;
   $('playn').textContent = p ? Math.min(5, p) : '✓';
   $('askn').textContent = skills.filter(queued).length;
+  const untrN = skills.filter(x => !cn(x)).length;
+  $('trb').hidden = !(sampleFn && (untrN || tq.running));
+  $('trb').disabled = tq.running;
+  $('trb').firstChild.textContent = tq.running ? `${aiLabel()} 寫導讀中 ` : `讓 ${aiLabel()} 寫中文導讀 `;
+  $('trn').textContent = tq.running ? `${tq.done}/${tq.total}` : untrN;
   if ($('drawer').classList.contains('on')) renderList();
 }
 let activeSpot = null;
@@ -1362,6 +1369,8 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && pa
 
 /* ---------- Drawer (shelf) ---------- */
 let filter = {zone: null, f: 'all'};
+const srcOf = s => /^\.claude\//.test(s.path || '') ? 'claude' : /^\.codex\//.test(s.path || '') ? 'codex' : '';
+const SRC = {codex: 'Codex', claude: 'Claude'};
 const FILTERS = [['all','全部'],['new','未整理'],['read','該讀全文'],['revise','待修'],['queued','待解釋'],['keep','已保留'],['retire','封存']];
 function openDrawer(opt = {}) {
   filter = {zone: opt.zone || null, f: opt.f || 'all'}; $('q').value = '';
@@ -1371,19 +1380,21 @@ function renderList() {
   const z = filter.zone && ZONES[filter.zone];
   $('dtitle').textContent = z ? z.name : (filter.f === 'queued' ? '待解釋' : '全部藏書');
   $('zdesc').hidden = !z; if (z) $('zdesc').textContent = z.desc;
-  $('chips').innerHTML = FILTERS.map(([k, n]) => `<button data-f="${k}" aria-pressed="${filter.f === k}">${n}</button>`).join('');
+  const srcs = [...new Set(skills.map(srcOf).filter(Boolean))];
+  $('chips').innerHTML = FILTERS.map(([k, n]) => `<button data-f="${k}" aria-pressed="${filter.f === k}">${n}</button>`).join('')
+    + (srcs.length > 1 ? srcs.map(k => `<button data-src="${k}" aria-pressed="${filter.src === k}">只看 ${SRC[k]}</button>`).join('') : '');
   const q = $('q').value.trim().toLowerCase();
-  let list = skills.filter(s => !z || zoneOf(s) === filter.zone);
+  let list = skills.filter(s => (!z || zoneOf(s) === filter.zone) && (!filter.src || srcOf(s) === filter.src));
   list = list.filter(s => ({all: stateOf(s) !== 'retire', new: ['new','stale'].includes(stateOf(s)), read: needsRead(s), revise: stateOf(s) === 'revise', queued: queued(s), keep: stateOf(s) === 'keep', retire: stateOf(s) === 'retire'})[filter.f]);
   if (q) list = list.filter(s => [s.alias, s.name, s.description, cn(s)?.one, cn(s)?.summary, s.raw].join('\n').toLowerCase().includes(q));
   list.sort((a, b) => needsRead(b) - needsRead(a) || (b.usage?.chats || 0) - (a.usage?.chats || 0) || Date.parse(b.usage?.last || 0) - Date.parse(a.usage?.last || 0));
   $('dsub').textContent = `${list.length} 本`;
   $('list').innerHTML = list.length ? list.map(s => {
     const st = stateOf(s);
-    return `<button class="book" data-key="${esc(s.key)}" style="--zc:${ZONES[zoneOf(s)].color}"><span class="spine"></span><span class="t"><strong>${needsRead(s) ? '<span class="bang">! </span>' : ''}${esc(s.alias)}</strong><span>${esc(cn(s)?.one || s.description)}</span>${localRoom ? `<span>${s.legacy ? '舊書房副本 · ' : ''}${esc(s.path)}</span>` : ''}<em class="uline"><i style="background:${tier(s).c}"></i>${tier(s).n}${s.usage ? ` · 近 30 天 ${s.usage.chats || 0} 次 · ${s.usage.last ? ago(s.usage.last) + '用過' : '沒被讀過'}` : ''} · 更新 ${esc(ymd(s.modified))}</em></span><span class="st ${st}">${STATUS[st]}</span></button>`;
+    return `<button class="book" data-key="${esc(s.key)}" style="--zc:${ZONES[zoneOf(s)].color}"><span class="spine"></span><span class="t"><strong>${needsRead(s) ? '<span class="bang">! </span>' : ''}${esc(s.alias)}${srcOf(s) ? `<span class="src ${srcOf(s)}">${SRC[srcOf(s)]}</span>` : ''}</strong><span>${esc(cn(s)?.one || s.description)}</span>${localRoom ? `<span>${s.legacy ? '舊書房副本 · ' : ''}${esc(s.path)}</span>` : ''}<em class="uline"><i style="background:${tier(s).c}"></i>${tier(s).n}${s.usage ? ` · 近 30 天 ${s.usage.chats || 0} 次 · ${s.usage.last ? ago(s.usage.last) + '用過' : '沒被讀過'}` : ''} · 更新 ${esc(ymd(s.modified))}</em></span><span class="st ${st}">${STATUS[st]}</span></button>`;
   }).join('') : `<div class="empty">${skills.length ? '這裡沒有符合的書。' : localRoom ? esc(roomStatus()) : '書還在搬進來…'}</div>`;
 }
-$('chips').onclick = e => { const b = e.target.closest('[data-f]'); if (b) { filter.f = b.dataset.f; renderList(); } };
+$('chips').onclick = e => { const b = e.target.closest('[data-f]'), sb = e.target.closest('[data-src]'); if (b) { filter.f = b.dataset.f; renderList(); } if (sb) { filter.src = filter.src === sb.dataset.src ? '' : sb.dataset.src; renderList(); } };
 $('q').oninput = renderList;
 $('list').onclick = e => { const b = e.target.closest('[data-key]'); if (b) openSheet(b.dataset.key); };
 $('shelf').onclick = () => openDrawer();
@@ -1434,6 +1445,7 @@ function renderMine() {
   });
 }
 $('askq').onclick = () => openDrawer({f: 'queued'});
+$('trb').onclick = pumpTranslate;
 
 /* ---------- Layers ---------- */
 const layers = [];
@@ -1818,7 +1830,7 @@ function uniBuild() {
   const portrait = U.h > U.w, sig = g.sig + portrait;
   if (U.sig === sig && U.nodes.length) return;
   const prev = U.sig && U.sig.endsWith(String(portrait)) ? U.byKey : {}; U.sig = sig; U.byKey = {};
-  U.centers = {}; zs.forEach((z, i) => { const a = -Math.PI / 2 + i / zs.length * Math.PI * 2 + Math.PI / 4; const cx = Math.cos(a) * 230, cy = Math.sin(a) * 170; U.centers[z] = portrait ? {x: cy, y: cx * 1.2} : {x: cx, y: cy}; });
+  U.centers = {}; zs.forEach((z, i) => { const a = -Math.PI / 2 + i / zs.length * Math.PI * 2 + Math.PI / 4; const cx = Math.cos(a) * 300, cy = Math.sin(a) * 220; U.centers[z] = portrait ? {x: cy, y: cx * 1.2} : {x: cx, y: cy}; });
   U.nodes = skills.map((s, i) => {
     const c = U.centers[zoneOf(s)], p = prev[s.key], st = stats(s);
     const n = {s, key: s.key, x: p ? p.x : c.x + Math.cos(i * 2.4) * 60, y: p ? p.y : c.y + Math.sin(i * 2.4) * 60, vx: 0, vy: 0, r: 5 + st.imp * 1.6 + (st.use || 1) * .9};
@@ -1832,7 +1844,7 @@ function uniStep(t) {
   const N = U.nodes;
   for (let i = 0; i < N.length; i++) for (let j = i + 1; j < N.length; j++) {
     const a = N[i], b = N[j]; let dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy + .01, d = Math.sqrt(d2);
-    const min = a.r + b.r + 44, f = d < min ? (min - d) * .5 : 1800 / d2;
+    const min = a.r + b.r + 58, f = d < min ? (min - d) * .5 : 1800 / d2;
     dx /= d; dy /= d; a.vx -= dx * f * t; a.vy -= dy * f * t; b.vx += dx * f * t; b.vy += dy * f * t;
   }
   for (const e of U.edges) {
@@ -1895,7 +1907,7 @@ function uniDraw(now) {
     ctx.quadraticCurveTo(mx, my, e.b.x, e.b.y); ctx.stroke();
   }
   ctx.setLineDash([]); ctx.globalAlpha = 1;
-  const tw = now / 1000;
+  const tw = now / 1000, labels = [];
   for (const n of U.nodes) {
     const s = n.s, st = stateOf(s), col = ZONES[zoneOf(s)].color, dim = focus && !near.has(n.key);
     ctx.globalAlpha = dim ? .18 : st === 'retire' ? .35 : 1;
@@ -1906,19 +1918,31 @@ function uniDraw(now) {
     ctx.fillStyle = '#fbf6ec'; ctx.beginPath(); ctx.arc(n.x, n.y, n.r * .5, 0, 7); ctx.fill();
     ctx.lineWidth = 2.2 / Math.sqrt(k); ctx.strokeStyle = {keep: '#5fd08a', revise: '#f2a85c', stale: '#ff7058', retire: '#8a8178'}[st] || 'rgba(255,255,255,.5)';
     if (st === 'new') ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, 7); ctx.stroke(); ctx.setLineDash([]);
-    if (k > .85 || n === focus || (focus && near.has(n.key)) || n.r * k > 7.5) {
-      ctx.font = `${n === focus ? 700 : 500} ${Math.max(11, 12 / k)}px "Noto Sans TC",sans-serif`; ctx.textAlign = 'center';
-      ctx.shadowColor = 'rgba(0,0,0,.7)'; ctx.shadowBlur = 4; ctx.fillStyle = dim ? 'rgba(245,236,220,.3)' : '#f5ecdc'; ctx.fillText(s.alias, n.x, n.y + n.r + 14 / Math.max(k, .6)); ctx.shadowBlur = 0;
-    }
+    if (!dim) labels.push({n, pri: n === focus ? 1e6 : near.has(n.key) ? 1e5 : n.r * 10 + (needsRead(s) ? 50 : 0)});
   }
   ctx.globalAlpha = 1;
-  ctx.font = `800 ${Math.max(14, 18 / k)}px "Noto Serif TC",serif`; ctx.textAlign = 'center';
+  // Labels in screen space: zone tags first, then node names largest-first; a name that would overlap is skipped (hover shows it).
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.textAlign = 'center';
+  const taken = [], hits = r => taken.some(o => r.x < o.x + o.w && o.x < r.x + r.w && r.y < o.y + o.h && o.y < r.y + r.h);
+  ctx.font = '800 15px "Noto Serif TC",serif';
   for (const [z, c] of Object.entries(cl)) {
-    const label = `${ZONES[z].name} · ${c.n}`, fs = Math.max(14, 18 / k), y = c.top - fs * 1.6, w = ctx.measureText(label).width + fs * 1.9;
-    ctx.fillStyle = '#fbf6ec'; ctx.beginPath(); ctx.roundRect(c.x - w / 2, y - fs * .95, w, fs * 1.7, fs * .85); ctx.fill();
-    ctx.fillStyle = ZONES[z].color; ctx.beginPath(); ctx.arc(c.x - w / 2 + fs * .75, y - fs * .1, fs * .28, 0, 7); ctx.fill();
-    ctx.fillStyle = '#2b231d'; ctx.fillText(label, c.x + fs * .4, y + fs * .3);
+    const label = `${ZONES[z].name} · ${c.n}`, w = ctx.measureText(label).width + 34, h = 28;
+    const sx = c.x * k + U.cam.x, sy = Math.max(64, c.top * k + U.cam.y - 30), r = {x: sx - w / 2, y: sy - h / 2, w, h};
+    taken.push(r);
+    ctx.globalAlpha = focus ? .55 : 1;
+    ctx.fillStyle = 'rgba(251,246,236,.94)'; ctx.beginPath(); ctx.roundRect(r.x, r.y, w, h, 14); ctx.fill();
+    ctx.fillStyle = ZONES[z].color; ctx.beginPath(); ctx.arc(r.x + 14, sy, 4.5, 0, 7); ctx.fill();
+    ctx.fillStyle = '#2b231d'; ctx.fillText(label, sx + 6, sy + 5);
   }
+  ctx.globalAlpha = 1; ctx.font = '500 12.5px "Noto Sans TC",sans-serif'; ctx.shadowColor = 'rgba(0,0,0,.8)'; ctx.shadowBlur = 4;
+  for (const {n} of labels.sort((a, b) => b.pri - a.pri)) {
+    let text = n.s.alias; if (text.length > 16) text = text.slice(0, 15) + '…';
+    const [sx, sy] = toScreen(n), w = ctx.measureText(text).width + 6, y = sy + n.r * k + 15, r = {x: sx - w / 2, y: y - 12, w, h: 16};
+    if (n !== focus && hits(r)) continue;
+    taken.push(r); ctx.font = `${n === focus ? 700 : 500} 12.5px "Noto Sans TC",sans-serif`;
+    ctx.fillStyle = '#f5ecdc'; ctx.fillText(text, sx, y);
+  }
+  ctx.shadowBlur = 0;
 }
 function uniLoop() {
   cancelAnimationFrame(U.raf);

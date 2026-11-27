@@ -126,7 +126,8 @@ def ask_codex(executable, prompt, kind):
 
 
 class Handler(BaseHTTPRequestHandler):
-    def __init__(self, *args, clis, slots, library, instance, **kwargs):
+    def __init__(self, *args, clis, slots, library, instance, version, **kwargs):
+        self.version = version
         self.clis = clis  # {"Codex": path, "Claude Code": path}, preferred first
         self.ai = next(iter(clis), None)
         self.slots = slots
@@ -165,7 +166,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_error(HTTPStatus.FORBIDDEN)
             elif path == "/api/codex/status":
                 self.json_response(HTTPStatus.OK, {
-                    "ai": self.ai, "available": list(self.clis), "service": SERVICE, "instance": self.instance,
+                    "ai": self.ai, "available": list(self.clis), "service": SERVICE, "instance": self.instance, "version": self.version,
                 })
             else:
                 revision = parse_qs(query).get("revision", [None])[0]
@@ -200,6 +201,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.headers.get("Host") != self.host or self.headers.get("Origin") != f"http://{self.host}":
             self.send_error(HTTPStatus.FORBIDDEN)
+            return
+        if self.path == "/api/shutdown":
+            self.json_response(HTTPStatus.OK, {"stopping": True})
+            threading.Thread(target=self.server.shutdown, daemon=True).start()
             return
         actions = {
             "/api/library/save": self.library.save,
@@ -263,7 +268,8 @@ def existing_room(port, instance):
             if response.status != 200:
                 return False
             status = json.loads(response.read(4096))
-            return isinstance(status, dict) and status.get("service") == SERVICE and status.get("instance") == instance
+            ok = isinstance(status, dict) and status.get("service") == SERVICE and status.get("instance") == instance
+            return status if ok else False
         except (ConnectionRefusedError, TimeoutError):
             time.sleep(0.1)
         except (OSError, HTTPException, ValueError):
@@ -271,6 +277,24 @@ def existing_room(port, instance):
         finally:
             connection.close()
     return False
+
+
+def replace_old_room(port, handler):
+    connection = HTTPConnection("127.0.0.1", port, timeout=2)
+    try:
+        connection.request("POST", "/api/shutdown", body="{}", headers={
+            "Origin": f"http://127.0.0.1:{port}", "Content-Type": "application/json"})
+        connection.getresponse().read()
+    except (OSError, HTTPException):
+        return None
+    finally:
+        connection.close()
+    for _ in range(40):
+        try:
+            return ThreadingHTTPServer(("127.0.0.1", port), handler)
+        except OSError:
+            time.sleep(0.1)
+    return None
 
 
 def open_room(url, should_open):
@@ -294,18 +318,28 @@ def main():
           else "找不到 Codex 或 Claude Code：書房照常開啟，導讀改用「複製到 ChatGPT」。", flush=True)
     library = LocalLibrary(Path.home())
     instance = digest(str(APP) + "\n" + str(library.home))
+    version = digest("".join((APP / f).read_text(encoding="utf-8") for f in ("codex_room.py", "local_library.py", "index.html")))
     handler = partial(Handler, clis=clis, slots=threading.BoundedSemaphore(2),
-                      library=library, instance=instance)
+                      library=library, instance=instance, version=version)
+    server = None
     try:
         server = ThreadingHTTPServer(("127.0.0.1", args.port), handler)
     except OSError as error:
         if error.errno != errno.EADDRINUSE:
             print(f"無法啟動規範書房：{error.strerror}", file=sys.stderr)
             return 1
-        if existing_room(args.port, instance):
+        running = existing_room(args.port, instance)
+        if running and running.get("version") == version:
             print("規範書房已在執行，使用原本的服務。", flush=True)
             open_room(f"http://127.0.0.1:{args.port}/", not args.no_open)
             return 0
+        if running:
+            print("關掉舊版書房，換成更新後的版本…", flush=True)
+            server = replace_old_room(args.port, handler)
+            if not server:
+                print("舊版書房沒有關掉。請到它的終端視窗按 Ctrl+C，再開一次。", file=sys.stderr)
+                return 1
+    if not server:
         alternate = 8765 if args.port == 8766 else 8766
         print(f"連接埠 {args.port} 已被其他程式或另一個書房占用。"
               "請先關閉占用的程式（舊書房可在原終端按 Ctrl+C），"
