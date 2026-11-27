@@ -403,6 +403,7 @@ kbd{display:inline-block;min-width:22px;padding:0 5px;border-radius:5px;border:1
 .ulegend b{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
 .uinfo{position:absolute;right:max(16px,env(safe-area-inset-right,0px));top:calc(64px + env(safe-area-inset-top,0px));width:min(340px,calc(100% - 32px));max-height:calc(100% - 140px);overflow-y:auto;background:var(--paper);color:var(--ink);border-radius:18px;padding:18px;display:grid;gap:10px;box-shadow:0 20px 60px rgba(0,0,0,.5);color-scheme:light;border-top:6px solid var(--zc,var(--brass))}
 .uinfo h3{margin:0;font:800 22px var(--display)}.uinfo p{margin:0;font-size:14px;color:var(--muted)}
+.uinfo .uoriginal{margin-top:-6px;overflow-wrap:anywhere}
 .unb{display:flex;flex-wrap:wrap;gap:6px}.unb button{padding:5px 10px;border-radius:99px;background:var(--paper-2);font-size:12px}.unb button:hover{background:#efe3cc}
 .unb i{display:inline-block;width:12px;border-top:2px solid var(--brass-deep);vertical-align:middle;margin-right:5px}.unb i.similar{border-top:1.5px dashed var(--muted)}
 .visitor.spr{width:8.2em;height:8.2em;margin:-8.2em 0 0 -4.1em}
@@ -423,7 +424,7 @@ kbd{display:inline-block;min-width:22px;padding:0 5px;border-radius:5px;border:1
   .brand span{display:none}
   .lampbar .lbl,.moods{display:none}
   .hud{gap:8px}
-  .dock{gap:6px}
+  .dock{gap:6px;flex-wrap:wrap}
   .dock button{padding:10px 12px;font-size:14px}
   .dock .lbl-long{display:none}
   .dock button{padding:10px 9px;font-size:13px;gap:5px}
@@ -496,6 +497,7 @@ kbd{display:inline-block;min-width:22px;padding:0 5px;border-radius:5px;border:1
     <button class="go alt" id="readb">細看內文 <span class="n" id="readn">0</span></button>
     <button id="unib">宇宙</button>
     <button id="shelf">書架</button>
+    <button id="cleanupb" hidden>快速清理 Skill</button>
     <button id="askq" aria-label="待解釋">?<span class="n" id="askn">0</span></button>
     <button class="go" id="trb" hidden>寫中文導讀 <span class="n" id="trn">0</span></button>
   </nav>
@@ -1326,6 +1328,7 @@ function render() {
   $('trb').disabled = tq.running;
   $('trb').firstChild.textContent = tq.running ? `${aiLabel()} 寫導讀中 ` : `讓 ${aiLabel()} 寫中文導讀 `;
   $('trn').textContent = tq.running ? `${tq.done}/${tq.total}` : untrN;
+  if ($('uni').classList.contains('on') && uniBuild()) uniInfo();
   if ($('drawer').classList.contains('on')) renderList();
 }
 let activeSpot = null;
@@ -1432,7 +1435,6 @@ function renderMine() {
   const untr = skills.filter(x => !cn(x)).length;
   const hasBrowserBooks = browserLibrary().skills?.length > 0;
   const localControls = `<button class="bigbtn" id="mscan" ${roomRefreshing ? 'disabled' : ''}>重新掃描本機 Skill</button>
-      <button class="bigbtn ghost" id="mcleanup">快速清理 Skill</button>
       ${hasBrowserBooks ? '<button class="bigbtn ghost" id="mmigrate">遷移這個瀏覽器的舊資料</button>' : ''}
       <label class="bigbtn ghost" for="mrestore">匯入舊書房備份</label>
       <input id="mrestore" type="file" accept=".json,application/json" hidden>`;
@@ -1459,7 +1461,6 @@ function renderMine() {
     event.target.value = '';
   };
   $('mapply') && ($('mapply').onclick = () => { close('mine'); openApply(); });
-  $('mcleanup') && ($('mcleanup').onclick = () => { close('mine'); openCleanup(); });
   $('mbody').querySelectorAll('[data-ai]').forEach(b => b.onclick = () => {
     if (tq.running) { toast('正在寫導讀，寫完再切換'); return; }
     sampleFn.ai = aiName = b.dataset.ai; ls.set('sr-ai', aiName);
@@ -1751,6 +1752,8 @@ function showResult() {
 $('play').onclick = () => { summon('cafe'); startTidy(); };
 $('readb').onclick = () => startReader();
 $('unib').onclick = uniOpen;
+$('cleanupb').hidden = !localRoom;
+$('cleanupb').onclick = openCleanup;
 $('ulegend').innerHTML = Object.values(ZONES).map(z => `<span><b style="background:${z.color}"></b>${z.name}</span>`).join('') + '<span><i></i>互相提到</span><span><i class="similar"></i>主題相近</span><span>星越大＝越重要越常用</span>';
 
 
@@ -1852,11 +1855,13 @@ $('rask').onclick = readerAsk;
 
 /* ---------- Skill universe ---------- */
 const U = {nodes: [], byKey: {}, cam: {x: 0, y: 0, k: 1}, hover: null, sel: null, raf: 0, stars: null, sig: null, heat: 0};
+const uniName = s => s.alias || s.name;
+const uniOriginal = s => s.name !== uniName(s) ? s.name : '';
 function uniBuild() {
   const g = graph(), zs = Object.keys(ZONES);
-  const portrait = U.h > U.w, sig = g.sig + portrait;
+  const portrait = U.h > U.w, sig = JSON.stringify([g.sig, skills.map(s => [uniName(s), uniOriginal(s)]), portrait]);
   if (U.sig === sig && U.nodes.length) return;
-  const prev = U.sig && U.sig.endsWith(String(portrait)) ? U.byKey : {}; U.sig = sig; U.byKey = {};
+  const prev = U.portrait === portrait ? U.byKey : {}; U.sig = sig; U.portrait = portrait; U.byKey = {};
   U.centers = {}; zs.forEach((z, i) => { const a = -Math.PI / 2 + i / zs.length * Math.PI * 2 + Math.PI / 4; const cx = Math.cos(a) * 300, cy = Math.sin(a) * 220; U.centers[z] = portrait ? {x: cy, y: cx * 1.2} : {x: cx, y: cy}; });
   U.nodes = skills.map((s, i) => {
     const c = U.centers[zoneOf(s)], p = prev[s.key], st = stats(s);
@@ -1864,8 +1869,11 @@ function uniBuild() {
     U.byKey[s.key] = n; return n;
   });
   U.edges = g.edges.map(e => ({a: U.byKey[e.a], b: U.byKey[e.b], kind: e.kind, w: e.w})).filter(e => e.a && e.b);
+  U.sel = U.sel ? U.byKey[U.sel.key] : null;
+  U.hover = U.hover ? U.byKey[U.hover.key] : null;
   for (let i = 0; i < 260; i++) uniStep(1);
   U.heat = 60;
+  return true;
 }
 function uniStep(t) {
   const N = U.nodes;
@@ -1961,13 +1969,22 @@ function uniDraw(now) {
     ctx.fillStyle = ZONES[z].color; ctx.beginPath(); ctx.arc(r.x + 14, sy, 4.5, 0, 7); ctx.fill();
     ctx.fillStyle = '#2b231d'; ctx.fillText(label, sx + 6, sy + 5);
   }
-  ctx.globalAlpha = 1; ctx.font = '500 12.5px "Noto Sans TC",sans-serif'; ctx.shadowColor = 'rgba(0,0,0,.8)'; ctx.shadowBlur = 4;
+  ctx.globalAlpha = 1; ctx.shadowColor = 'rgba(0,0,0,.8)'; ctx.shadowBlur = 4;
   for (const {n} of labels.sort((a, b) => b.pri - a.pri)) {
-    let text = n.s.alias; if (text.length > 16) text = text.slice(0, 15) + '…';
-    const [sx, sy] = toScreen(n), w = ctx.measureText(text).width + 6, y = sy + n.r * k + 15, r = {x: sx - w / 2, y: y - 12, w, h: 16};
+    const name = uniName(n.s), text = name.length > 16 ? name.slice(0, 15) + '…' : name;
+    const original = uniOriginal(n.s), subtitle = original.length > 26 ? original.slice(0, 25) + '…' : original;
+    const titleFont = `${n === focus ? 700 : 500} 12.5px "Noto Sans TC",sans-serif`, subtitleFont = '400 11px "Noto Sans TC",sans-serif';
+    ctx.font = titleFont;
+    const titleWidth = ctx.measureText(text).width;
+    ctx.font = subtitleFont;
+    const [sx, sy] = toScreen(n), w = Math.max(titleWidth, ctx.measureText(subtitle).width) + 6;
+    const y = sy + n.r * k + 15, r = {x: sx - w / 2, y: y - 12, w, h: subtitle ? 30 : 16};
     if (n !== focus && hits(r)) continue;
-    taken.push(r); ctx.font = `${n === focus ? 700 : 500} 12.5px "Noto Sans TC",sans-serif`;
+    taken.push(r); ctx.font = titleFont;
     ctx.fillStyle = '#f5ecdc'; ctx.fillText(text, sx, y);
+    if (subtitle) {
+      ctx.font = subtitleFont; ctx.fillStyle = '#d8cbb8'; ctx.fillText(subtitle, sx, y + 14);
+    }
   }
   ctx.shadowBlur = 0;
 }
@@ -1987,8 +2004,8 @@ function uniInfo() {
   const s = n.s, nb = graph().nb[s.key] || [];
   box.hidden = false;
   box.style.setProperty('--zc', ZONES[zoneOf(s)].color);
-  box.innerHTML = `<div class="zone" style="color:${ZONES[zoneOf(s)].color}">${esc(ZONES[zoneOf(s)].name)} · ${STATUS[stateOf(s)]}</div><h3>${esc(s.alias)} <span class="tier" style="--tc:${tier(s).c};vertical-align:middle;margin:0 0 0 6px">${tier(s).n}</span></h3><p>${esc(cn(s)?.one || s.description)}</p>${factsHTML(s)}${statsHTML(s, 'mini')}
-    ${nb.length ? `<div class="unb">${nb.map(x => { const o = skills.find(y => y.key === x.key); return o ? `<button data-k="${esc(o.key)}"><i class="${x.kind}"></i>${esc(o.alias)}</button>` : ''; }).join('')}</div>` : '<p class="note">沒有找到明顯的連線。</p>'}
+  box.innerHTML = `<div class="zone" style="color:${ZONES[zoneOf(s)].color}">${esc(ZONES[zoneOf(s)].name)} · ${STATUS[stateOf(s)]}</div><h3>${esc(uniName(s))} <span class="tier" style="--tc:${tier(s).c};vertical-align:middle;margin:0 0 0 6px">${tier(s).n}</span></h3>${uniOriginal(s) ? `<p class="uoriginal">${esc(uniOriginal(s))}</p>` : ''}<p>${esc(cn(s)?.one || s.description)}</p>${factsHTML(s)}${statsHTML(s, 'mini')}
+    ${nb.length ? `<div class="unb">${nb.map(x => { const o = skills.find(y => y.key === x.key); return o ? `<button data-k="${esc(o.key)}"><i class="${x.kind}"></i>${esc([uniName(o), uniOriginal(o)].filter(Boolean).join(' · '))}</button>` : ''; }).join('')}</div>` : '<p class="note">沒有找到明顯的連線。</p>'}
     <button class="bigbtn" id="uopen">打開這本</button>`;
   box.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { U.sel = U.byKey[b.dataset.k]; uniInfo(); });
   $('uopen').onclick = () => openSheet(s.key);
