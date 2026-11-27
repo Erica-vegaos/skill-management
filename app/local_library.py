@@ -231,7 +231,6 @@ class LocalLibrary:
         with self.connect() as connection:
             connection.execute('CREATE TABLE IF NOT EXISTS room (id INTEGER PRIMARY KEY, revision INTEGER, data TEXT)')
             state = {'skills': {}, 'marks': {}, 'explains': {}, 'scan': None}
-            state['first_guides_pending'] = True
             connection.execute('INSERT OR IGNORE INTO room VALUES (1, 0, ?)', (encoded(state),))
 
     @contextmanager
@@ -264,10 +263,6 @@ class LocalLibrary:
                 connection.execute('UPDATE room SET revision = ?, data = ? WHERE id = 1', (revision, after))
         return {'room': self.snapshot(revision, state), 'result': result}
 
-    def claim_first_guides(self, _):
-        # Claim inside the database transaction so only one browser starts the batch.
-        return self.change(lambda state: state.pop('first_guides_pending', False))
-
     def refresh(self):
         def update(state):
             documents, scan = scan_sources(self.home, self.kind)
@@ -276,7 +271,9 @@ class LocalLibrary:
                 book['manageable'] = book['manageable'] and path.parent.parent == self.home / f'.{self.kind}' / 'skills'
             for book in state['skills'].values():
                 book.pop('manageable', None)
+                book.pop('active_source', None)
             for book in documents:
+                book['active_source'] = True
                 old = state['skills'].get(book['key'])
                 if old:
                     book.update({field: old[field] for field in ('alias', 'zone', 'chinese', 'usage', 'created')
