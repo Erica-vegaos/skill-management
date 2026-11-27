@@ -79,6 +79,23 @@ def ask_claude(executable, prompt, kind):
     return {"guide": json.loads(text[start:end + 1])}
 
 
+NAMES = {"codex": "Codex", "claude": "Claude Code"}
+
+
+def find_cli(name):
+    """PATH first, then the usual install spots (a double-clicked launcher may get a short PATH)."""
+    found = shutil.which(name)
+    if found:
+        return found
+    home = Path.home()
+    for folder in (home / ".local/bin", home / ".claude/local", home / ".npm-global/bin",
+                   Path("/opt/homebrew/bin"), Path("/usr/local/bin")):
+        candidate = folder / name
+        if candidate.is_file() and candidate.stat().st_mode & 0o111:
+            return str(candidate)
+    return None
+
+
 def ask_codex(executable, prompt, kind):
     with tempfile.TemporaryDirectory(prefix="skill-room-") as directory:
         workspace = Path(directory)
@@ -109,9 +126,9 @@ def ask_codex(executable, prompt, kind):
 
 
 class Handler(BaseHTTPRequestHandler):
-    def __init__(self, *args, executable, ai, slots, library, instance, **kwargs):
-        self.executable = executable
-        self.ai = ai
+    def __init__(self, *args, clis, slots, library, instance, **kwargs):
+        self.clis = clis  # {"Codex": path, "Claude Code": path}, preferred first
+        self.ai = next(iter(clis), None)
         self.slots = slots
         self.library = library
         self.instance = instance
@@ -148,7 +165,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_error(HTTPStatus.FORBIDDEN)
             elif path == "/api/codex/status":
                 self.json_response(HTTPStatus.OK, {
-                    "ai": self.ai, "service": SERVICE, "instance": self.instance,
+                    "ai": self.ai, "available": list(self.clis), "service": SERVICE, "instance": self.instance,
                 })
             else:
                 revision = parse_qs(query).get("revision", [None])[0]
@@ -190,7 +207,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/library/migrate": self.library.migrate,
         }
         action = actions.get(self.path)
-        if not action and (self.path != "/api/codex/ask" or not self.executable):
+        if not action and (self.path != "/api/codex/ask" or not self.clis):
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         if self.headers.get_content_type() != "application/json":
@@ -212,15 +229,17 @@ class Handler(BaseHTTPRequestHandler):
             self.library_response(action, data)
             return
         kind, prompt = data.get("kind"), data.get("prompt")
+        if data.get("ai") in self.clis:
+            self.ai = data["ai"]
         if kind not in ("guide", "explain") or not isinstance(prompt, str) or not prompt.strip():
             self.json_response(HTTPStatus.BAD_REQUEST, {"error": "請提供有效的導讀或解釋需求。"})
             return
         if not self.slots.acquire(blocking=False):
-            self.json_response(HTTPStatus.TOO_MANY_REQUESTS, {"error": "Codex 正在處理其他需求，請稍後再試。"})
+            self.json_response(HTTPStatus.TOO_MANY_REQUESTS, {"error": "AI 正在處理其他需求，請稍後再試。"})
             return
         try:
             ask = ask_claude if self.ai == "Claude Code" else ask_codex
-            result = ask(self.executable, prompt, kind)
+            result = ask(self.clis[self.ai], prompt, kind)
         except subprocess.TimeoutExpired:
             self.json_response(HTTPStatus.GATEWAY_TIMEOUT, {"error": f"{self.ai} 回覆逾時，請再試一次。"})
         except RuntimeError as error:
@@ -269,13 +288,13 @@ def main():
     args = parser.parse_args()
     if not 0 <= args.port <= 65535:
         parser.error("--port 必須介於 0 和 65535。")
-    order = {"auto": ["codex", "claude"], "codex": ["codex"], "claude": ["claude"]}[args.ai]
-    executable, ai = next(((shutil.which(n), n) for n in order if shutil.which(n)), (None, None))
-    ai = {"codex": "Codex", "claude": "Claude Code"}.get(ai)
-    print(f"導讀由 {ai} 撰寫。" if ai else "找不到 Codex 或 Claude Code：書房照常開啟，導讀改用「複製到 ChatGPT」。", flush=True)
+    order = ["claude", "codex"] if args.ai == "claude" else ["codex", "claude"]
+    clis = {NAMES[n]: path for n in order if (path := find_cli(n))}
+    print(f"可以寫導讀的 AI：{'、'.join(clis)}（在「我的書房」切換）" if clis
+          else "找不到 Codex 或 Claude Code：書房照常開啟，導讀改用「複製到 ChatGPT」。", flush=True)
     library = LocalLibrary(Path.home())
     instance = digest(str(APP) + "\n" + str(library.home))
-    handler = partial(Handler, executable=executable, ai=ai, slots=threading.BoundedSemaphore(2),
+    handler = partial(Handler, clis=clis, slots=threading.BoundedSemaphore(2),
                       library=library, instance=instance)
     try:
         server = ThreadingHTTPServer(("127.0.0.1", args.port), handler)

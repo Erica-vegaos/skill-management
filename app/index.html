@@ -705,8 +705,9 @@ async function codexSample() {
   try {
     const status = await fetch('/api/codex/status', {signal: AbortSignal.timeout(2000)});
     if (!status.ok) return null;
-    var localName = (await status.json()).ai;
-    if (!localName) return null;
+    var info = await status.json(), available = info.available || (info.ai ? [info.ai] : []);
+    if (!available.length) return null;
+    var localName = available.includes(ls.get('sr-ai', null)) ? ls.get('sr-ai', null) : available[0];
   } catch { return null; }
 
   async function ask(kind, input) {
@@ -716,7 +717,7 @@ async function codexSample() {
     const response = await fetch('/api/codex/ask', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({kind, prompt}),
+      body: JSON.stringify({kind, prompt, ai: sample.ai}),
     });
     const data = await response.json();
     if (!response.ok) throw Object.assign(new Error(data.error || 'AI 未完成回覆。'), {code: 'codex_error'});
@@ -730,6 +731,7 @@ async function codexSample() {
   };
   sample.json = async input => (await ask('guide', input)).guide;
   sample.ai = localName;
+  sample.available = available;
   return sample;
 }
 
@@ -1399,6 +1401,7 @@ function renderMine() {
       <input id="mrestore" type="file" accept=".json,application/json" hidden>`;
   $('mbody').innerHTML = `<div class="statgrid"><div><b>${skills.length}</b>本書</div><div><b>${c('keep') + c('revise') + c('retire')}</b>已整理</div><div><b>${untr}</b>待寫導讀</div></div>
     ${localRoom ? `<p class="note">${esc(roomStatus())}</p>${roomScan?.errors.length ? `<ul class="privacy">${roomScan.errors.map(error => `<li>${esc(error)}</li>`).join('')}</ul>` : ''}` : ''}
+    ${sampleFn?.available?.length > 1 ? `<p class="note">誰來寫導讀和解釋？</p><div class="chips">${sampleFn.available.map(n => `<button data-ai="${esc(n)}" aria-pressed="${n === aiName}">${n === 'Codex' ? '⌨' : '✳'} 用 ${esc(n)} 寫</button>`).join('')}</div>` : ''}
     <div class="stack-btns">
       ${!localRoom && c('retire') + c('revise') ? `<button class="bigbtn" id="mapply">讓整理生效・${c('retire')} 封存 ${c('revise')} 待修</button>` : ''}
       ${localRoom ? localControls : '<button class="bigbtn" id="mimp">' + (skills.length ? '更新我的 Skill' : '搬進我的 Skill') + '</button>'}
@@ -1419,6 +1422,11 @@ function renderMine() {
     event.target.value = '';
   };
   $('mapply') && ($('mapply').onclick = () => { close('mine'); openApply(); });
+  $('mbody').querySelectorAll('[data-ai]').forEach(b => b.onclick = () => {
+    if (tq.running) { toast('正在寫導讀，寫完再切換'); return; }
+    sampleFn.ai = aiName = b.dataset.ai; ls.set('sr-ai', aiName);
+    $('extab').textContent = `請 ${aiName} 解釋`; render(); renderMine(); toast(`之後改用 ${aiName} 寫`);
+  });
   $('mtr') && ($('mtr').onclick = pumpTranslate);
   $('mwipe') && ($('mwipe').onclick = async () => {
     if (!wipeArmed) { wipeArmed = true; renderMine(); setTimeout(() => { wipeArmed = false; if ($('mine').classList.contains('on')) renderMine(); }, 5000); return; }
