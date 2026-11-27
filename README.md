@@ -15,10 +15,12 @@ Read and organize your AI agent skills in a cozy library.
 請在我的電腦安裝並開啟「Codex 書房」。
 1. 將 https://github.com/Erica-vegaos/skill-management.git clone 到 ~/skill-room。若已有這個 repo，確認沒有未提交的修改，再用 git pull --ff-only 更新。若目錄不是這個 repo 或有本機修改，保留現況並告訴我。
 2. 確認 Python 3 可用。Mac 執行 open "$HOME/skill-room/開啟 Codex 書房.command"。Windows 或 Linux 在獨立終端執行 app/codex_room.py --ai codex（Windows 用 py，Linux 用 python3），讓服務保持執行。
-3. 開啟 http://127.0.0.1:8765/，回報載入了幾份文件。不要變更任何 Skill 原始檔案。
+3. 開啟 http://127.0.0.1:8765/。首次安裝會自動產生中文導讀，請保持頁面開啟，等書房完成後回報載入和寫好導讀的份數。不要變更任何 Skill 原始檔案。
 ```
 
 會讀：`~/.codex/skills/*/SKILL.md`、`~/.codex/skills/.system/*/SKILL.md`、`~/.codex/AGENTS.md`。導讀由 Codex 寫。
+
+首次開啟全新的 Codex 書房時，若已登入的本機 Codex CLI 可用，書房會自動批次產生缺少的中文導讀，底部會顯示進度。生成中斷時，已完成的導讀會保留，可按「讓 Codex 寫中文導讀」接著補完。
 
 ### 用 Claude 的人
 
@@ -33,7 +35,7 @@ Read and organize your AI agent skills in a cozy library.
 
 會讀：`~/.claude/skills/*/SKILL.md`、`~/.claude/CLAUDE.md`。導讀由 Claude Code 寫。
 
-書房開好後，按底部「讓 … 寫中文導讀」把導讀寫好。空白檔會略過，讀取失敗的原因在「我的書房」查看。之後要再開，Mac 雙擊 `~/skill-room` 裡對應的 `.command` 就好。
+Claude 書房開好後，按底部「讓 Claude Code 寫中文導讀」。空白檔會略過，讀取失敗的原因在「我的書房」查看。之後要再開，Mac 雙擊 `~/skill-room` 裡對應的 `.command` 就好。
 
 ## 怎麼開 · Run it
 
@@ -52,7 +54,7 @@ Read and organize your AI agent skills in a cozy library.
 
 - 從「書架」打開文件，或按「決定去留」標記保留、待修、封存或必備。本機版的標記只記錄在書房。
 - 啟動時會掃描來源，也可以在「我的書房」按「重新掃描本機 Skill」。原文更新時會保留原有決定和導讀資料，書房會提示重新確認新版。來源移除後，既有書籍與整理紀錄仍可查閱。
-- 導讀和解釋由這間書房的 AI 寫（Codex 書房用 Codex、Claude 書房用 Claude Code），用的是你自己的帳號額度。找不到該 AI 時可以複製提問到 ChatGPT。啟動和掃描都不會呼叫 AI。
+- 導讀和解釋由這間書房的 AI 寫（Codex 書房用 Codex、Claude 書房用 Claude Code），用的是你自己的帳號額度。Codex 書房首次自動寫好導讀後，之後開啟或掃描仍會沿用已有的導讀。找不到該 AI 時可以複製提問到 ChatGPT。
 
 ## 遷移舊書房
 

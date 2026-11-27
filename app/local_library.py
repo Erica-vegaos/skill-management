@@ -228,6 +228,8 @@ class LocalLibrary:
         with self.connect() as connection:
             connection.execute('CREATE TABLE IF NOT EXISTS room (id INTEGER PRIMARY KEY, revision INTEGER, data TEXT)')
             state = {'skills': {}, 'marks': {}, 'explains': {}, 'scan': None}
+            if self.kind == 'codex':
+                state['first_guides_pending'] = True
             connection.execute('INSERT OR IGNORE INTO room VALUES (1, 0, ?)', (encoded(state),))
 
     @contextmanager
@@ -259,6 +261,10 @@ class LocalLibrary:
                 revision += 1
                 connection.execute('UPDATE room SET revision = ?, data = ? WHERE id = 1', (revision, after))
         return {'room': self.snapshot(revision, state), 'result': result}
+
+    def claim_first_guides(self, _):
+        # Claim inside the database transaction so only one browser starts the batch.
+        return self.change(lambda state: state.pop('first_guides_pending', False))
 
     def refresh(self):
         def update(state):

@@ -766,6 +766,16 @@ async function boot() {
     window.addEventListener('focus', syncLibrary);
     if ((sampleFn = await codexSample())) aiName = sampleFn.ai;
     $('extab').textContent = aiName ? `請 ${aiName} 解釋` : '解釋';
+    if (roomKind === 'codex' && aiName === 'Codex' && firstGuidesPending && skills.some(s => !cn(s))) {
+      try {
+        if (await editLibrary('first-guides', {})) {
+          await pumpTranslate();
+          if (tq.done === tq.total && tq.total) toast(`首次導讀完成，已寫好 ${tq.done} 份。`);
+        }
+      } catch (error) {
+        toast(`無法開始首次導讀：${error.message}。可按底部按鈕重試。`);
+      }
+    }
     render();
     return;
   }
@@ -794,6 +804,7 @@ async function boot() {
 }
 let roomScan = null, roomRevision = -1, roomError = '', roomRefreshError = '', roomRefreshing = false, roomReading = false;
 let roomWrites = Promise.resolve(), roomPending = 0;
+let firstGuidesPending = false;
 
 function roomStatus() {
   if (roomError) return roomError;
@@ -819,6 +830,7 @@ function useRoom(room) {
   const previous = openKey && [skills.find(s => s.key === openKey), marks[openKey], explains[openKey]];
   if (room && room.revision >= roomRevision) {
     ({skills, marks, explains, scan: roomScan, revision: roomRevision} = room);
+    firstGuidesPending = room.first_guides_pending === true;
     if (roomKind) skills = skills.filter(s => !srcOf(s) || srcOf(s) === roomKind);
   }
   loaded = true;
