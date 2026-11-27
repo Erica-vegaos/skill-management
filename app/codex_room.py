@@ -21,6 +21,7 @@ import webbrowser
 
 from local_library import LocalLibrary, digest
 from skill_effects import SkillEffects
+from guide_worker import GuideWorker
 
 
 APP = Path(__file__).resolve().parent
@@ -148,13 +149,14 @@ def ask_codex(executable, prompt, kind):
 
 
 class Handler(BaseHTTPRequestHandler):
-    def __init__(self, *args, clis, slots, library, effects, instance, version, room, **kwargs):
+    def __init__(self, *args, clis, slots, library, guides, effects, instance, version, room, **kwargs):
         self.room = room
         self.version = version
         self.clis = clis  # {"Codex": path, "Claude Code": path}, preferred first
         self.ai = next(iter(clis), None)
         self.slots = slots
         self.library = library
+        self.guides = guides
         self.effects = effects
         self.instance = instance
         super().__init__(*args, **kwargs)
@@ -184,7 +186,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.FORBIDDEN)
             return
         path, _, query = self.path.partition("?")
-        if path in ("/api/codex/status", "/api/library"):
+        if path in ("/api/codex/status", "/api/library", "/api/library/guides"):
             if (self.headers.get("Origin") not in (None, f"http://{self.host}")
                     or self.headers.get("Sec-Fetch-Site") not in (None, "same-origin", "none")):
                 self.send_error(HTTPStatus.FORBIDDEN)
@@ -192,6 +194,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.json_response(HTTPStatus.OK, {
                     "ai": self.ai, "available": list(self.clis), "room": self.room, "service": SERVICE, "instance": self.instance, "version": self.version,
                 })
+            elif path == "/api/library/guides":
+                self.json_response(HTTPStatus.OK, self.guides.status())
             else:
                 revision = parse_qs(query).get("revision", [None])[0]
                 self.library_response(self.library.read, revision)
@@ -250,13 +254,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         actions = {
             "/api/library/save": self.library.save,
-            "/api/library/refresh": lambda _: self.library.refresh(),
+            "/api/library/refresh": self.refresh_sources,
+            "/api/library/guides": lambda _: {'result': self.guides.start()},
             "/api/library/migrate": self.library.migrate,
             "/api/library/usage": lambda _: {'result': self.library.usage()},
             "/api/library/stage-archive": self.library.stage_archive,
         }
-        if self.clis:
-            actions["/api/library/first-guides"] = self.library.claim_first_guides
         if self.effects:
             draft = self.draft_skill if self.clis else None
             actions["/api/library/effects-preview"] = lambda data: self.effects.preview(data, draft)
@@ -305,6 +308,12 @@ class Handler(BaseHTTPRequestHandler):
             self.json_response(HTTPStatus.OK, result)
         finally:
             self.slots.release()
+
+
+    def refresh_sources(self, _):
+        result = self.library.refresh()
+        self.guides.start()
+        return result
 
 
 def existing_room(port, instance):
@@ -371,9 +380,20 @@ def main():
           else f"{room}：讀 ~/.{args.ai}。找不到 {NAMES[args.ai]}，導讀改用「複製到 ChatGPT」。", flush=True)
     library = LocalLibrary(Path.home(), args.ai)
     instance = digest(str(APP) + "\n" + str(library.home) + "\n" + args.ai)
-    version = digest("".join((APP / f).read_text(encoding="utf-8") for f in ("codex_room.py", "local_library.py", "skill_usage.py", "skill_effects.py", "index.html")))
-    handler = partial(Handler, clis=clis, slots=threading.BoundedSemaphore(2),
-                      library=library, effects=SkillEffects(library),
+    version = digest("".join((APP / f).read_text(encoding="utf-8") for f in ("codex_room.py", "local_library.py", "skill_usage.py", "skill_effects.py", "guide_worker.py", "index.html")))
+    slots = threading.BoundedSemaphore(2)
+
+    def generate_guide(prompt):
+        ask = ask_codex if args.ai == 'codex' else ask_claude
+        with slots:
+            try:
+                return ask(path, prompt, 'guide')['guide']
+            except subprocess.TimeoutExpired as error:
+                raise RuntimeError('本機 AI 產生導讀逾時，可接續重試。') from error
+
+    guides = GuideWorker(library, generate_guide if path else None)
+    handler = partial(Handler, clis=clis, slots=slots,
+                      library=library, guides=guides, effects=SkillEffects(library),
                       instance=instance, version=version, room=args.ai)
     server = None
     try:
@@ -410,6 +430,7 @@ def main():
         print(f"已載入 {scan['found']} 份 ~/.{args.ai} 的文件，略過 {scan['blank']} 份空白檔。", flush=True)
         for error in scan["errors"]:
             print(error, file=sys.stderr)
+        guides.start()
         open_room(f"http://127.0.0.1:{server.server_port}/", not args.no_open)
         try:
             server.serve_forever()
