@@ -3,6 +3,23 @@
 把你的 AI Skill（`SKILL.md`、`AGENTS.md`）讀懂、整理，然後讓整理真的生效。
 Read, sort and actually clean up your AI agent skills (`SKILL.md`, `AGENTS.md`) — in a cozy library instead of a file tree.
 
+## 最簡單：叫你的 Codex 幫你開 · Easiest: ask your Codex
+
+不用會 GitHub。打開 Codex（app 或 CLI），整段貼上：
+
+```
+請幫我安裝並打開「規範書房」：
+1. 把 https://github.com/Erica-vegaos/skill-management 下載到 ~/skill-room（已經有就更新到最新版）
+2. 把 ~/.codex/skills/*/SKILL.md、~/.codex/skills/.system/*/SKILL.md、~/.codex/AGENTS.md（存在的才收）
+   打包成桌面上的 my-skills.zip，zip 裡保留「資料夾名/SKILL.md」的結構，不要修改任何原始檔案
+3. Mac：執行 open ~/skill-room/開啟書房.command
+   Windows：另開一個終端執行 py ~/skill-room/app/codex_room.py，不要讓它卡住這個對話
+4. 告訴我：書房網址、zip 位置、收了幾份 Skill
+```
+
+書房打開後：按「開始」→ 選「Codex 本機」→ 上傳桌面的 `my-skills.zip`。
+之後要再開，雙擊 `~/skill-room/開啟書房.command` 就好。
+
 ## 怎麼開 · Run it
 
 | 方式 | 做法 |
