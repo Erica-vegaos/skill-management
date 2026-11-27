@@ -109,11 +109,16 @@ def read_source(path, home):
 AI_FOLDERS = ('.codex', '.claude')
 
 
-def scan_sources(home):
-    codex, claude = home / '.codex', home / '.claude'
-    paths = [codex / 'AGENTS.md', claude / 'CLAUDE.md']
+def scan_sources(home, kind='codex'):
+    """Each room reads only its own AI's folder: ~/.codex for Codex, ~/.claude for Claude."""
+    if kind == 'claude':
+        base = home / '.claude'
+        paths, roots = [base / 'CLAUDE.md'], (base / 'skills',)
+    else:
+        base = home / '.codex'
+        paths, roots = [base / 'AGENTS.md'], (base / 'skills', base / 'skills' / '.system')
     errors = []
-    for base, root in ((codex, codex / 'skills'), (codex, codex / 'skills' / '.system'), (claude, claude / 'skills')):
+    for root in roots:
         try:
             root.resolve(strict=True).relative_to(base)
             paths.extend(entry / 'SKILL.md' for entry in sorted(root.iterdir())
@@ -209,10 +214,12 @@ def legacy_book(book):
 
 
 class LocalLibrary:
-    def __init__(self, home):
+    def __init__(self, home, kind='codex'):
         self.home = home.resolve()
+        self.kind = kind
         self.directory = self.home / '.skill-room'
-        self.database = self.directory / 'library-v1.sqlite3'
+        # Codex keeps the original file name so existing rooms keep their data.
+        self.database = self.directory / ('library-v1.sqlite3' if kind == 'codex' else f'library-{kind}-v1.sqlite3')
 
     def initialise(self):
         self.directory.mkdir(mode=0o700, exist_ok=True)
@@ -255,7 +262,7 @@ class LocalLibrary:
 
     def refresh(self):
         def update(state):
-            documents, scan = scan_sources(self.home)
+            documents, scan = scan_sources(self.home, self.kind)
             for book in documents:
                 old = state['skills'].get(book['key'])
                 if old:

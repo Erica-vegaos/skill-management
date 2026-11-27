@@ -80,6 +80,8 @@ def ask_claude(executable, prompt, kind):
 
 
 NAMES = {"codex": "Codex", "claude": "Claude Code"}
+ROOMS = {"codex": "Codex 書房", "claude": "Claude 書房"}
+PORTS = {"codex": 8765, "claude": 8766}
 
 
 def find_cli(name):
@@ -126,7 +128,8 @@ def ask_codex(executable, prompt, kind):
 
 
 class Handler(BaseHTTPRequestHandler):
-    def __init__(self, *args, clis, slots, library, instance, version, **kwargs):
+    def __init__(self, *args, clis, slots, library, instance, version, room, **kwargs):
+        self.room = room
         self.version = version
         self.clis = clis  # {"Codex": path, "Claude Code": path}, preferred first
         self.ai = next(iter(clis), None)
@@ -166,7 +169,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_error(HTTPStatus.FORBIDDEN)
             elif path == "/api/codex/status":
                 self.json_response(HTTPStatus.OK, {
-                    "ai": self.ai, "available": list(self.clis), "service": SERVICE, "instance": self.instance, "version": self.version,
+                    "ai": self.ai, "available": list(self.clis), "room": self.room, "service": SERVICE, "instance": self.instance, "version": self.version,
                 })
             else:
                 revision = parse_qs(query).get("revision", [None])[0]
@@ -298,29 +301,32 @@ def replace_old_room(port, handler):
 
 
 def open_room(url, should_open):
-    print(f"規範書房 · {url}", flush=True)
+    print(f"書房網址 · {url}", flush=True)
     if should_open and not webbrowser.open(url):
         print("無法自動開啟瀏覽器。請複製上方網址到瀏覽器。", flush=True)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--ai", choices=["codex", "claude"], default="codex",
+                        help="開哪一間書房：codex 讀 ~/.codex、用 Codex 寫導讀；claude 讀 ~/.claude、用 Claude Code 寫")
+    parser.add_argument("--port", type=int, help="預設 Codex 書房 8765、Claude 書房 8766")
     parser.add_argument("--no-open", action="store_true")
-    parser.add_argument("--ai", choices=["auto", "codex", "claude"], default="auto",
-                        help="誰來寫導讀：預設先找 Codex，再找 Claude Code")
     args = parser.parse_args()
+    if args.port is None:
+        args.port = PORTS[args.ai]
     if not 0 <= args.port <= 65535:
         parser.error("--port 必須介於 0 和 65535。")
-    order = ["claude", "codex"] if args.ai == "claude" else ["codex", "claude"]
-    clis = {NAMES[n]: path for n in order if (path := find_cli(n))}
-    print(f"可以寫導讀的 AI：{'、'.join(clis)}（在「我的書房」切換）" if clis
-          else "找不到 Codex 或 Claude Code：書房照常開啟，導讀改用「複製到 ChatGPT」。", flush=True)
-    library = LocalLibrary(Path.home())
-    instance = digest(str(APP) + "\n" + str(library.home))
+    room = ROOMS[args.ai]
+    path = find_cli(args.ai)
+    clis = {NAMES[args.ai]: path} if path else {}
+    print(f"{room}：讀 ~/.{args.ai}，導讀由 {NAMES[args.ai]} 撰寫。" if clis
+          else f"{room}：讀 ~/.{args.ai}。找不到 {NAMES[args.ai]}，導讀改用「複製到 ChatGPT」。", flush=True)
+    library = LocalLibrary(Path.home(), args.ai)
+    instance = digest(str(APP) + "\n" + str(library.home) + "\n" + args.ai)
     version = digest("".join((APP / f).read_text(encoding="utf-8") for f in ("codex_room.py", "local_library.py", "index.html")))
     handler = partial(Handler, clis=clis, slots=threading.BoundedSemaphore(2),
-                      library=library, instance=instance, version=version)
+                      library=library, instance=instance, version=version, room=args.ai)
     server = None
     try:
         server = ThreadingHTTPServer(("127.0.0.1", args.port), handler)
@@ -340,10 +346,10 @@ def main():
                 print("舊版書房沒有關掉。請到它的終端視窗按 Ctrl+C，再開一次。", file=sys.stderr)
                 return 1
     if not server:
-        alternate = 8765 if args.port == 8766 else 8766
+        alternate = args.port + 10
         print(f"連接埠 {args.port} 已被其他程式或另一個書房占用。"
               "請先關閉占用的程式（舊書房可在原終端按 Ctrl+C），"
-              f"或在終端執行 python3 app/codex_room.py --port {alternate}。", file=sys.stderr)
+              f"或在終端執行 python3 app/codex_room.py --ai {args.ai} --port {alternate}。", file=sys.stderr)
         return 1
     with server:
         try:
@@ -353,7 +359,7 @@ def main():
             print(f"無法讀寫 ~/.skill-room 的資料庫（{type(error).__name__}）。"
                   "請確認資料夾權限與可用磁碟空間。", file=sys.stderr)
             return 1
-        print(f"已載入 {scan['found']} 份本機 Skill 文件（Codex、Claude），略過 {scan['blank']} 份空白檔。", flush=True)
+        print(f"已載入 {scan['found']} 份 ~/.{args.ai} 的文件，略過 {scan['blank']} 份空白檔。", flush=True)
         for error in scan["errors"]:
             print(error, file=sys.stderr)
         open_room(f"http://127.0.0.1:{server.server_port}/", not args.no_open)

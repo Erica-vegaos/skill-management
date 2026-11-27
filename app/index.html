@@ -613,7 +613,7 @@ const STATUS = {keep:'已保留',revise:'待修',retire:'封存',new:'未整理'
 const zoneOf = s => ZONES[s.zone] ? s.zone : 'support';
 
 /* ---------- State ---------- */
-let skills = [], marks = {}, explains = {}, db = null, sampleFn = null, canWrite = true;
+let skills = [], marks = {}, explains = {}, db = null, sampleFn = null, canWrite = true, roomKind = '';
 let mood = ls.get('sr-mood', matchMedia('(prefers-color-scheme: dark)').matches ? 'night' : 'warm');
 let soundOn = ls.get('sr-sound', true);
 let litBefore = null;
@@ -702,13 +702,19 @@ const aiAccount = () => aiName === 'Claude'
     ? `按下產生導讀或解釋時，會用你電腦上登入的 ${aiName} 帳號處理送出的內容。`
     : '可以把已遮蔽的原文與問題複製到 ChatGPT。';
 
+function nameRoom(kind) {
+  roomKind = kind; const name = kind === 'claude' ? 'Claude 書房' : 'Codex 書房';
+  document.querySelector('.brand span').textContent = name; document.title = name;
+  skills = skills.filter(s => !srcOf(s) || srcOf(s) === roomKind);
+}
 async function codexSample() {
   if (!localRoom || location.protocol !== 'http:' || location.hostname !== '127.0.0.1') return null;
   try {
     const status = await fetch('/api/codex/status', {signal: AbortSignal.timeout(2000)});
     if (!status.ok) return null;
     var info = await status.json(), available = info.available || (info.ai ? [info.ai] : []);
-    if (!available.length) return null;
+    if (info.room === 'codex' || info.room === 'claude') nameRoom(info.room);
+    if (!available.length) { render(); return null; }
     var localName = available.includes(ls.get('sr-ai', null)) ? ls.get('sr-ai', null) : available[0];
   } catch { return null; }
 
@@ -813,6 +819,7 @@ function useRoom(room) {
   const previous = openKey && [skills.find(s => s.key === openKey), marks[openKey], explains[openKey]];
   if (room && room.revision >= roomRevision) {
     ({skills, marks, explains, scan: roomScan, revision: roomRevision} = room);
+    if (roomKind) skills = skills.filter(s => !srcOf(s) || srcOf(s) === roomKind);
   }
   loaded = true;
   roomError = '';
@@ -1391,7 +1398,7 @@ function renderList() {
   $('dsub').textContent = `${list.length} 本`;
   $('list').innerHTML = list.length ? list.map(s => {
     const st = stateOf(s);
-    return `<button class="book" data-key="${esc(s.key)}" style="--zc:${ZONES[zoneOf(s)].color}"><span class="spine"></span><span class="t"><strong>${needsRead(s) ? '<span class="bang">! </span>' : ''}${esc(s.alias)}${srcOf(s) ? `<span class="src ${srcOf(s)}">${SRC[srcOf(s)]}</span>` : ''}</strong><span>${esc(cn(s)?.one || s.description)}</span>${localRoom ? `<span>${s.legacy ? '舊書房副本 · ' : ''}${esc(s.path)}</span>` : ''}<em class="uline"><i style="background:${tier(s).c}"></i>${tier(s).n}${s.usage ? ` · 近 30 天 ${s.usage.chats || 0} 次 · ${s.usage.last ? ago(s.usage.last) + '用過' : '沒被讀過'}` : ''} · 更新 ${esc(ymd(s.modified))}</em></span><span class="st ${st}">${STATUS[st]}</span></button>`;
+    return `<button class="book" data-key="${esc(s.key)}" style="--zc:${ZONES[zoneOf(s)].color}"><span class="spine"></span><span class="t"><strong>${needsRead(s) ? '<span class="bang">! </span>' : ''}${esc(s.alias)}${srcOf(s) && !roomKind ? `<span class="src ${srcOf(s)}">${SRC[srcOf(s)]}</span>` : ''}</strong><span>${esc(cn(s)?.one || s.description)}</span>${localRoom ? `<span>${s.legacy ? '舊書房副本 · ' : ''}${esc(s.path)}</span>` : ''}<em class="uline"><i style="background:${tier(s).c}"></i>${tier(s).n}${s.usage ? ` · 近 30 天 ${s.usage.chats || 0} 次 · ${s.usage.last ? ago(s.usage.last) + '用過' : '沒被讀過'}` : ''} · 更新 ${esc(ymd(s.modified))}</em></span><span class="st ${st}">${STATUS[st]}</span></button>`;
   }).join('') : `<div class="empty">${skills.length ? '這裡沒有符合的書。' : localRoom ? esc(roomStatus()) : '書還在搬進來…'}</div>`;
 }
 $('chips').onclick = e => { const b = e.target.closest('[data-f]'), sb = e.target.closest('[data-src]'); if (b) { filter.f = b.dataset.f; renderList(); } if (sb) { filter.src = filter.src === sb.dataset.src ? '' : sb.dataset.src; renderList(); } };

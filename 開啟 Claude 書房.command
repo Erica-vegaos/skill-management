@@ -1,5 +1,5 @@
 #!/bin/bash
-# Mac: double-click to start the local Skill Room or open the running instance.
+# Mac: double-click to open the Claude room (reads ~/.claude, guides by Claude). Opens the running one if it is already up.
 set -eu
 cd -- "$(dirname -- "$0")"
 if ! command -v python3 >/dev/null 2>&1; then
@@ -7,8 +7,8 @@ if ! command -v python3 >/dev/null 2>&1; then
   read -r -p '按 Enter 結束。' _ || true
   exit 1
 fi
-echo '第一次啟動後請保留這個視窗。要停止服務時按 Ctrl+C。'
-python3 app/codex_room.py "$@" || {
+echo 'Claude 書房開著時請保留這個視窗。要停止時按 Ctrl+C。'
+python3 app/codex_room.py --ai claude "$@" || {
   status=$?
   if [ -t 0 ] && [ "$status" -ne 130 ]; then
     read -r -p '按 Enter 結束。' _ || true

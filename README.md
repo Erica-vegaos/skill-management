@@ -1,45 +1,58 @@
 # 規範書房 · Skill Room
 
-在書房閱讀、標記和整理你的 AI 規範（`SKILL.md`、`AGENTS.md`、`CLAUDE.md`），Codex 和 Claude 都適用。
+在書房閱讀、標記和整理你的 AI 規範（`SKILL.md`、`AGENTS.md`、`CLAUDE.md`）。Codex 和 Claude 各有一間獨立的書房。
 Read and organize your AI agent skills in a cozy library.
 
 ## 貼給你的 AI，一次安裝並開啟
 
-不用會 GitHub。打開下面任一個，整段貼上：
+不用會 GitHub。Codex 和 Claude 各有一間**獨立的書房**：各讀各的 Skill、各自寫導讀、資料分開存。兩個都裝的人，兩間可以同時開。
 
-- **Codex**：Codex app 或 CLI
-- **Claude**：Claude 桌面 app 的「Code」分頁，或終端裡的 Claude Code（一般聊天分頁碰不到你電腦的檔案，不能用）
+### 用 Codex 的人
+
+打開 Codex（app 或 CLI），整段貼上：
 
 ```text
-請在我的電腦安裝並開啟「規範書房」。
+請在我的電腦安裝並開啟「Codex 書房」。
 1. 將 https://github.com/Erica-vegaos/skill-management.git clone 到 ~/skill-room。若已有這個 repo，確認沒有未提交的修改，再用 git pull --ff-only 更新。若目錄不是這個 repo 或有本機修改，保留現況並告訴我。
-2. 確認 Python 3 可用。Mac 執行 open "$HOME/skill-room/開啟書房.command"。Windows 或 Linux 在獨立終端啟動 app/codex_room.py（Windows 用 py，Linux 用 python3），讓服務保持執行。
-3. 開啟 http://127.0.0.1:8765/。從書房畫面或啟動日誌核對載入份數與錯誤，回報網址和結果。不用打包 ZIP、上傳 Skill、選 AI 或產生導讀，也不要變更任何 Skill 原始檔案。
+2. 確認 Python 3 可用。Mac 執行 open "$HOME/skill-room/開啟 Codex 書房.command"。Windows 或 Linux 在獨立終端執行 app/codex_room.py --ai codex（Windows 用 py，Linux 用 python3），讓服務保持執行。
+3. 開啟 http://127.0.0.1:8765/，回報載入了幾份文件。不要變更任何 Skill 原始檔案。
 ```
 
-書房開啟時會自動載入：
+會讀：`~/.codex/skills/*/SKILL.md`、`~/.codex/skills/.system/*/SKILL.md`、`~/.codex/AGENTS.md`。導讀由 Codex 寫。
 
-- Codex：`~/.codex/skills/*/SKILL.md`、`~/.codex/skills/.system/*/SKILL.md`、`~/.codex/AGENTS.md`
-- Claude：`~/.claude/skills/*/SKILL.md`、`~/.claude/CLAUDE.md`
+### 用 Claude 的人
 
-空白檔會略過。來源以相對路徑顯示，同名的個人與系統 Skill 各自保留。畫面會顯示載入數量，讀取失敗的原因可在「我的書房」查看。
+打開 Claude 桌面 app 的「Code」分頁（或終端裡的 Claude Code），整段貼上。一般聊天分頁碰不到你電腦的檔案，不能用。
+
+```text
+請在我的電腦安裝並開啟「Claude 書房」。
+1. 將 https://github.com/Erica-vegaos/skill-management.git clone 到 ~/skill-room。若已有這個 repo，確認沒有未提交的修改，再用 git pull --ff-only 更新。若目錄不是這個 repo 或有本機修改，保留現況並告訴我。
+2. 確認 Python 3 可用。Mac 執行 open "$HOME/skill-room/開啟 Claude 書房.command"。Windows 或 Linux 在獨立終端執行 app/codex_room.py --ai claude（Windows 用 py，Linux 用 python3），讓服務保持執行。
+3. 開啟 http://127.0.0.1:8766/，回報載入了幾份文件。不要變更任何 Skill 原始檔案。
+```
+
+會讀：`~/.claude/skills/*/SKILL.md`、`~/.claude/CLAUDE.md`。導讀由 Claude Code 寫。
+
+書房開好後，按底部「讓 … 寫中文導讀」把導讀寫好。空白檔會略過，讀取失敗的原因在「我的書房」查看。之後要再開，Mac 雙擊 `~/skill-room` 裡對應的 `.command` 就好。
 
 ## 怎麼開 · Run it
 
-| 方式 | 做法 |
-|---|---|
-| Mac | 雙擊 `開啟書房.command`。保留第一次啟動的終端視窗。再雙擊會開啟同一個服務。 |
-| Linux／Windows | 在專案目錄執行 `python3 app/codex_room.py`（Windows 用 `py app/codex_room.py`），開啟終端顯示的網址。 |
-| 純 HTML | 開啟 `app/index.html`，依畫面指示手動匯入 Skill。 |
-| Claude 雲端 | 把 `app/index.html` 發布成 Claude Artifact（宣告 `db`、`user`、`sample`），由看的人手動匯入。 |
+| | Codex 書房 | Claude 書房 |
+|---|---|---|
+| Mac | 雙擊 `開啟 Codex 書房.command` | 雙擊 `開啟 Claude 書房.command` |
+| Linux／Windows | `python3 app/codex_room.py --ai codex` | `python3 app/codex_room.py --ai claude` |
+| 網址 | http://127.0.0.1:8765/ | http://127.0.0.1:8766/ |
+| 資料 | `~/.skill-room/library-v1.sqlite3` | `~/.skill-room/library-claude-v1.sqlite3` |
 
-只需要 Python 3，無須安裝 Python 套件。若 8765 已被其他程式占用，關閉該程式後再試，或在專案目錄執行 `python3 app/codex_room.py --port 8766`，再使用終端顯示的網址。更新程式後，請先在原本的終端按 Ctrl+C 停止舊服務，再重新啟動。
+只需要 Python 3，無須安裝套件。連接埠被占用時可加 `--port 其他號碼`。程式更新後重新開一次，舊版書房會自動被換掉。
+
+另外也可以直接開 `app/index.html` 手動匯入，或把它發布成 Claude Artifact（宣告 `db`、`user`、`sample`）給只用 claude.ai 網頁的人。
 
 ## 整理與更新
 
 - 從「書架」打開文件，或按「決定去留」標記保留、待修、封存或必備。本機版的標記只記錄在書房。
 - 啟動時會掃描來源，也可以在「我的書房」按「重新掃描本機 Skill」。原文更新時會保留原有決定和導讀資料，書房會提示重新確認新版。來源移除後，既有書籍與整理紀錄仍可查閱。
-- 需要導讀時再按畫面上的導讀或解釋按鈕。電腦上有 Codex 或 Claude Code 就用它寫；兩個都有的話，在「我的書房」點「用 Codex 寫／用 Claude Code 寫」切換，書房會記住。兩者都沒有時可以複製提問到 ChatGPT。啟動和掃描均不會呼叫 AI。
+- 導讀和解釋由這間書房的 AI 寫（Codex 書房用 Codex、Claude 書房用 Claude Code），用的是你自己的帳號額度。找不到該 AI 時可以複製提問到 ChatGPT。啟動和掃描都不會呼叫 AI。
 
 ## 遷移舊書房
 
@@ -49,7 +62,7 @@ Read and organize your AI agent skills in a cozy library.
 
 ## 資料 · Privacy
 
-- 本機版的書籍與整理資料保存在 `~/.skill-room/library-v1.sqlite3`。所有連到同一台電腦上同一服務的瀏覽器共用書房資料。燈光和音效是各瀏覽器自己的設定。
+- 本機版的書籍與整理資料保存在 `~/.skill-room/`，Codex 書房和 Claude 書房各一份。同一台電腦上的瀏覽器共用同一間書房的資料。燈光和音效是各瀏覽器自己的設定。
 - 本機匯入會在儲存前遮蔽可辨識的金鑰、密碼、Email、電話和家目錄路徑。服務只監聽 `127.0.0.1`，並檢查請求來源。
 - 純 HTML 的資料留在該瀏覽器。Claude 雲端的書房資料依使用者隔離。選擇請 AI 寫導讀或解釋時，才會用你的 AI 帳號處理送出的內容。
 
