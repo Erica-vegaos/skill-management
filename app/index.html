@@ -553,6 +553,11 @@ kbd{display:inline-block;min-width:22px;padding:0 5px;border-radius:5px;border:1
   <div class="pbody" id="abody"></div>
 </aside>
 
+<aside class="panel mine" id="cleanup" aria-label="快速清理 Skill">
+  <div class="phead"><div><h2>快速清理 Skill</h2></div><button class="close" data-close="cleanup" aria-label="關閉">×</button></div>
+  <div class="pbody" id="cleanupbody"></div>
+</aside>
+
 <section class="reader" id="reader" aria-label="細看內文">
   <div class="rbar"><button class="iconbtn" id="rclose" aria-label="結束閱讀">×</button><h2 id="rtitle"></h2></div>
   <div class="rprog" id="rprog"></div>
@@ -1422,10 +1427,12 @@ $('mineb').onclick = () => { open('mine'); renderMine(); };
 let wipeArmed = false;
 function renderMine() {
   const c = k => skills.filter(s => stateOf(s) === k).length;
+  const applyCounts = ['retire', 'revise'].map(k => skills.filter(s => canApply(s) && stateOf(s) === k).length);
   $('msub').textContent = localRoom ? '本機服務・同一台電腦的瀏覽器共用' : db ? '只有你看得到・各裝置同步' : '本機模式・資料只在這個瀏覽器';
   const untr = skills.filter(x => !cn(x)).length;
   const hasBrowserBooks = browserLibrary().skills?.length > 0;
   const localControls = `<button class="bigbtn" id="mscan" ${roomRefreshing ? 'disabled' : ''}>重新掃描本機 Skill</button>
+      <button class="bigbtn ghost" id="mcleanup">快速清理 Skill</button>
       ${hasBrowserBooks ? '<button class="bigbtn ghost" id="mmigrate">遷移這個瀏覽器的舊資料</button>' : ''}
       <label class="bigbtn ghost" for="mrestore">匯入舊書房備份</label>
       <input id="mrestore" type="file" accept=".json,application/json" hidden>`;
@@ -1433,7 +1440,7 @@ function renderMine() {
     ${localRoom ? `<p class="note">${esc(roomStatus())}</p>${roomScan?.errors.length ? `<ul class="privacy">${roomScan.errors.map(error => `<li>${esc(error)}</li>`).join('')}</ul>` : ''}` : ''}
     ${sampleFn?.available?.length > 1 ? `<p class="note">誰來寫導讀和解釋？</p><div class="chips">${sampleFn.available.map(n => `<button data-ai="${esc(n)}" aria-pressed="${n === aiName}">${n === 'Codex' ? '⌨' : '✳'} 用 ${esc(n)} 寫</button>`).join('')}</div>` : ''}
     <div class="stack-btns">
-      ${!localRoom && c('retire') + c('revise') ? `<button class="bigbtn" id="mapply">讓整理生效・${c('retire')} 封存 ${c('revise')} 待修</button>` : ''}
+      ${applyCounts.some(Boolean) ? `<button class="bigbtn" id="mapply">讓整理生效・${applyCounts[0]} 封存 ${applyCounts[1]} 待修</button>` : ''}
       ${localRoom ? localControls : '<button class="bigbtn" id="mimp">' + (skills.length ? '更新我的 Skill' : '搬進我的 Skill') + '</button>'}
       ${!db && hasBrowserBooks ? '<button class="bigbtn ghost" id="mexport">下載這個瀏覽器的舊資料備份</button>' : ''}
       ${untr && sampleFn ? `<button class="bigbtn ghost" id="mtr" ${tq.running ? 'disabled' : ''}>${tq.running ? `${aiLabel()} 正在寫 ${tq.done}/${tq.total}` : `讓 ${aiLabel()} 寫 ${untr} 本導讀`}</button>` : ''}
@@ -1452,6 +1459,7 @@ function renderMine() {
     event.target.value = '';
   };
   $('mapply') && ($('mapply').onclick = () => { close('mine'); openApply(); });
+  $('mcleanup') && ($('mcleanup').onclick = () => { close('mine'); openCleanup(); });
   $('mbody').querySelectorAll('[data-ai]').forEach(b => b.onclick = () => {
     if (tq.running) { toast('正在寫導讀，寫完再切換'); return; }
     sampleFn.ai = aiName = b.dataset.ai; ls.set('sr-ai', aiName);
@@ -1733,7 +1741,7 @@ function showResult() {
   $('deck').innerHTML = `<div class="result"><div class="box"><div class="stars">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</div><h3>${decided ? '這輪整理完成' : '這輪先看到這裡'}</h3>
     <p style="margin:0;color:var(--muted)">${gained > 0 ? `書房多亮了 ${gained} 盞燈。` : ''}${left ? `還有 ${left} 本沒整理。` : '全部整理完了，書房燈全亮。'}</p>
     <div class="tally five"><div><b>${r.tally.keep}</b>保留</div><div><b>${r.tally.star}</b>必備</div><div><b>${r.tally.revise}</b>待修</div><div><b>${r.tally.retire}</b>封存</div><div><b>${r.tally.ask}</b>看不懂</div></div>
-    <div class="row"><button id="rhome">回書房</button>${left ? '<button class="go" id="ragain">再來一輪</button>' : ''}</div>${!localRoom && skills.some(s => ['retire', 'revise'].includes(stateOf(s))) ? '<button class="bigbtn" id="rapply" style="margin-top:10px">讓整理生效 →</button>' : ''}</div></div>`;
+    <div class="row"><button id="rhome">回書房</button>${left ? '<button class="go" id="ragain">再來一輪</button>' : ''}</div>${skills.some(s => canApply(s) && ['retire', 'revise'].includes(stateOf(s))) ? '<button class="bigbtn" id="rapply" style="margin-top:10px">讓整理生效 →</button>' : ''}</div></div>`;
   blip('done'); const b = $('deck').getBoundingClientRect(); sparks(b.left + b.width / 2, b.top + b.height / 3, 16);
   $('rhome').onclick = () => { endTidy(); if (gained > 0 && mood === 'day') { mood = 'warm'; applyMood(); } };
   $('ragain') && ($('ragain').onclick = startTidy);
@@ -2051,7 +2059,56 @@ async function sendFb() {
 $('fbb').onclick = () => { open('fb'); renderFb(); };
 
 /* ---------- Apply: turn decisions into one instruction for the user's own AI ---------- */
+const canApply = s => !localRoom || s.manageable === true;
+
+async function openCleanup() {
+  const body = $('cleanupbody');
+  body.textContent = '正在盤點本機使用紀錄…';
+  open('cleanup');
+  let history;
+  try { ({result: history} = await libraryRequest('/api/library/usage', {})); }
+  catch (error) { body.textContent = `無法盤點使用紀錄：${error.message}`; return; }
+
+  const cutoff = Date.now() - 180 * DAY;
+  const groups = [
+    {title: '現有紀錄未見使用', books: []}, {title: '最後記錄距今至少 180 天', books: []},
+    {title: '沒有可用的使用紀錄', books: []}, {title: '近 180 天有使用紀錄', books: []},
+  ];
+  for (const s of skills.filter(s => s.manageable && !marks[s.key]?.star && !['keep', 'retire'].includes(stateOf(s)))) {
+    const last = Math.max(...[history.last[s.path], s.usage?.last].map(Date.parse).filter(Number.isFinite));
+    const group = Number.isFinite(last) ? (last <= cutoff ? 1 : 3) : (history.files && !s.usage?.chats ? 0 : 2);
+    groups[group].books.push({s, last});
+  }
+  const section = ({title, books}) => books.length ? `<h3>${title}（${books.length}）</h3>${books
+    .sort((a, b) => a.last - b.last || a.s.alias.localeCompare(b.s.alias))
+    .map(({s, last}) => `<label class="bigbtn ghost" style="text-align:left"><input type="checkbox" value="${esc(s.key)}" data-hash="${esc(s.hash)}"> ${esc(s.alias)}${Number.isFinite(last) ? ` · ${ymd(new Date(last).toISOString())}` : ''}<br><small>${esc(s.path)}</small></label>`).join('')}` : '';
+  body.innerHTML = `<p class="note">使用紀錄來自這台電腦上可辨識的 Skill 讀取。掃描 ${history.files} 份紀錄${history.partial ? '（部分紀錄未掃描）' : ''}。沒有看到讀取紀錄，仍可能曾被使用。</p><div class="stack-btns">${groups.map(section).join('') || '<p>目前沒有可清理的個人 Skill。</p>'}</div>
+    <button class="bigbtn" id="cleanupstage" disabled>標為封存並預覽指令</button>`;
+  const stage = $('cleanupstage');
+  const selected = () => [...body.querySelectorAll('input:checked')];
+  body.onchange = () => { stage.disabled = selected().length === 0; };
+  stage.onclick = async () => {
+    const books = Object.fromEntries(selected().map(b => [b.value, b.dataset.hash]));
+    stage.disabled = true;
+    try {
+      await editLibrary('stage-archive', {books});
+      close('cleanup');
+      openApply(new Set(Object.keys(books)));
+    } catch (error) {
+      stage.disabled = false;
+      toast(error.message);
+    }
+  };
+}
+
 function applyPrompt(env, retire, revise) {
+  if (localRoom) {
+    const base = roomKind === 'claude' ? '~/.claude' : '~/.codex';
+    const paths = books => books.map(s => `- ${JSON.stringify(`~/${s.path.slice(0, -'/SKILL.md'.length)}`)}`).join('\n');
+    const archive = retire.length ? `\n【封存】只處理下列確切的資料夾。逐一確認來源為 ${base}/skills/ 底下第一層的普通資料夾，含有 SKILL.md，且來源和目的路徑均不經過符號連結。將資料夾移到 ${base}/skills-archive/，保留原名。找不到、同名衝突或不符合條件的都跳過。不要刪除或覆寫。\n${paths(retire)}\n` : '';
+    const review = revise.length ? `\n【待修】只讀下列資料夾的 SKILL.md，各列 1 到 3 個具體修改建議。等我確認再改。\n${paths(revise)}\n` : '';
+    return `請套用我在書房的整理決定。\n${archive}${review}\n完成後列出已移走和跳過的項目及原因。要復原封存，可以把資料夾搬回 ${base}/skills/。`;
+  }
   const where = s => /^\.(codex|claude)\//.test(s.path || '') ? `：~/${s.path.replace(/\/[^/]+$/, '')}` : '';
   const list = xs => xs.map(s => `- ${s.name}${s.alias !== s.name ? `（${s.alias}）` : ''}${where(s)}`).join('\n');
   const why = s => { const c = cn(s); return c?.one ? `：${c.one}` : ''; };
@@ -2065,15 +2122,16 @@ PR 說明用中文列出每一份做了什麼。`;
 ${retire.length ? `\n【封存】在 ${dirs} 找到這些 Skill 的資料夾，移到同一層的「skills-archive」資料夾（例如 ~/.codex/skills-archive/名稱）。不要刪除；找不到或同名衝突的跳過並告訴我：\n${list(retire)}\n` : ''}${revise.length ? `\n【待修】這些先不要改。逐份讀全文，各給我 1 到 3 個具體修改建議，等我確認再動手：\n${revise.map(s => `- ${s.name}${why(s)}`).join('\n')}\n` : ''}
 做完列出：移走了哪些、跳過了哪些和原因。之後開的新聊天才會套用。`;
 }
-function openApply() {
-  const retire = skills.filter(s => stateOf(s) === 'retire'), revise = skills.filter(s => stateOf(s) === 'revise');
-  const env = envPick || detectEnv() || 'claude-desktop';
+function openApply(selected) {
+  const books = skills.filter(s => canApply(s) && (!selected || selected.has(s.key)));
+  const retire = books.filter(s => stateOf(s) === 'retire'), revise = books.filter(s => stateOf(s) === 'revise');
+  const env = localRoom ? (roomKind === 'claude' ? 'claude-desktop' : 'codex-local') : envPick || detectEnv() || 'claude-desktop';
   const prompt = applyPrompt(env, retire, revise);
   $('asub').textContent = `${ENVS[env].icon} ${ENVS[env].name}`;
   $('abody').innerHTML = retire.length + revise.length ? `<p class="lead">書房只記得你的決定。複製這段貼給你的 AI，它會幫你真的${env === 'claude-web' ? '停用' : '移走'}封存的 Skill，並針對待修的給建議。</p>
     <div class="pbox"><div class="ptitle"><b>複製這段，貼給你的 AI</b><button class="copyp" id="acopy">複製指令</button></div><pre>${esc(prompt)}</pre></div>
     <div class="statgrid" style="margin-top:14px"><div><b>${retire.length}</b>封存</div><div><b>${revise.length}</b>待修</div><div><b>${skills.length - retire.length - revise.length}</b>不動</div></div>
-    <p class="note">你在哪裡用 AI？</p><div class="chips">${Object.entries(ENVS).map(([k, e]) => `<button data-aenv="${k}" aria-pressed="${k === env}">${e.icon} ${e.name}</button>`).join('')}</div>`
+    ${localRoom ? '<p class="note">封存後回到「我的書房」重新掃描。本次封存可從 skills-archive 搬回。</p>' : `<p class="note">你在哪裡用 AI？</p><div class="chips">${Object.entries(ENVS).map(([k, e]) => `<button data-aenv="${k}" aria-pressed="${k === env}">${e.icon} ${e.name}</button>`).join('')}</div>`}`
     : '<p class="empty">還沒有封存或待修的書。去咖啡廳翻幾張再回來。</p>';
   $('acopy') && ($('acopy').onclick = async () => { try { await navigator.clipboard.writeText(prompt); $('acopy').textContent = '已複製'; blip('done'); } catch { window.prompt('複製下面的內容', prompt); } });
   $('abody').querySelectorAll('[data-aenv]').forEach(b => b.onclick = () => { envPick = b.dataset.aenv; ls.set('sr-env', envPick); openApply(); });

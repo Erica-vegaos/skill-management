@@ -10,6 +10,8 @@ import re
 import sqlite3
 import stat
 
+from skill_usage import scan_usage
+
 
 # Keep these patterns aligned with SECRETS in index.html (standalone import).
 SECRETS = [
@@ -101,6 +103,7 @@ def read_source(path, home):
         'path': relative, 'name': name, 'alias': name, 'zone': guess_zone(name),
         'kind': 'AGENTS' if agents else 'Skill',
         'group': '系統' if path.parent.parent.name == '.system' else '個人',
+        'manageable': path == resolved and not path.parent.name.startswith('.'),
         'description': clean_text(description[1].strip().strip('"\'')) if description else '',
         'modified': modified, 'hash': digest(raw), 'chinese': None,
     }
@@ -269,12 +272,40 @@ class LocalLibrary:
         def update(state):
             documents, scan = scan_sources(self.home, self.kind)
             for book in documents:
+                path = self.home / book['path']
+                book['manageable'] = book['manageable'] and path.parent.parent == self.home / f'.{self.kind}' / 'skills'
+            for book in state['skills'].values():
+                book.pop('manageable', None)
+            for book in documents:
                 old = state['skills'].get(book['key'])
                 if old:
                     book.update({field: old[field] for field in ('alias', 'zone', 'chinese', 'usage', 'created')
                                  if field in old})
                 state['skills'][book['key']] = book
             state['scan'] = scan
+
+        return self.change(update)
+
+    def usage(self):
+        paths = [book['path'] for book in self.read()['skills'] if book.get('manageable')]
+        return scan_usage(self.home, self.kind, paths)
+
+    def stage_archive(self, data):
+        requested = data.get('books')
+        if not isinstance(requested, dict) or not requested:
+            raise ValueError('請勾選要封存的 Skill。')
+
+        def update(state):
+            for key, source_hash in requested.items():
+                book = state['skills'].get(key, {})
+                mark = state['marks'].get(key, {})
+                if (not book.get('manageable') or book['hash'] != source_hash or mark.get('star')
+                        or (mark.get('hash') == source_hash and mark.get('status') == 'keep')):
+                    raise ValueError('有 Skill 已更新、移除或標為保留，請重新確認清單。')
+            at = datetime.now(timezone.utc).isoformat()
+            for key, source_hash in requested.items():
+                state['marks'].setdefault(key, {}).update(status='retire', hash=source_hash, at=at)
+            return len(requested)
 
         return self.change(update)
 
