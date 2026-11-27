@@ -214,7 +214,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/library/refresh": lambda _: self.library.refresh(),
             "/api/library/migrate": self.library.migrate,
         }
-        if self.room == "codex" and self.clis:
+        if self.clis:
             actions["/api/library/first-guides"] = self.library.claim_first_guides
         action = actions.get(self.path)
         if not action and (self.path != "/api/codex/ask" or not self.clis):

@@ -228,8 +228,7 @@ class LocalLibrary:
         with self.connect() as connection:
             connection.execute('CREATE TABLE IF NOT EXISTS room (id INTEGER PRIMARY KEY, revision INTEGER, data TEXT)')
             state = {'skills': {}, 'marks': {}, 'explains': {}, 'scan': None}
-            if self.kind == 'codex':
-                state['first_guides_pending'] = True
+            state['first_guides_pending'] = True
             connection.execute('INSERT OR IGNORE INTO room VALUES (1, 0, ?)', (encoded(state),))
 
     @contextmanager

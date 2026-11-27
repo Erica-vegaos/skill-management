@@ -766,7 +766,7 @@ async function boot() {
     window.addEventListener('focus', syncLibrary);
     if ((sampleFn = await codexSample())) aiName = sampleFn.ai;
     $('extab').textContent = aiName ? `請 ${aiName} 解釋` : '解釋';
-    if (roomKind === 'codex' && aiName === 'Codex' && firstGuidesPending && skills.some(s => !cn(s))) {
+    if (aiName === {codex: 'Codex', claude: 'Claude Code'}[roomKind] && firstGuidesPending && skills.some(s => !cn(s))) {
       try {
         if (await editLibrary('first-guides', {})) {
           await pumpTranslate();
