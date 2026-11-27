@@ -62,8 +62,9 @@ PREAMBLE = ("你是規範書房的唯讀導讀員。只依下方提供的資料�
 
 def ask_claude(executable, prompt, kind):
     """Claude Code CLI in print mode, no built-in tools, no MCP, nothing saved."""
-    if kind == "guide":
-        prompt += "\n\n只輸出一個 JSON 物件，不要 markdown 或其他文字。欄位：" + ", ".join(GUIDE_SCHEMA["properties"])
+    if kind in ("guide", "revision"):
+        fields = GUIDE_SCHEMA["properties"] if kind == "guide" else REVISION_SCHEMA["properties"]
+        prompt += "\n\n只輸出一個 JSON 物件，不要 markdown 圍欄或其他文字。欄位：" + ", ".join(fields)
     with tempfile.TemporaryDirectory(prefix="skill-room-") as directory:
         result = subprocess.run(
             [executable, "-p", "--tools", "", "--strict-mcp-config", "--no-session-persistence",
@@ -76,10 +77,10 @@ def ask_claude(executable, prompt, kind):
     text = result.stdout.strip()
     if not text:
         raise RuntimeError("Claude Code 沒有回傳內容，請再試一次。")
-    if kind != "guide":
+    if kind not in ("guide", "revision"):
         return {"text": text}
     start, end = text.find("{"), text.rfind("}")
-    return {"guide": json.loads(text[start:end + 1])}
+    return {kind: json.loads(text[start:end + 1])}
 
 
 NAMES = {"codex": "Codex", "claude": "Claude Code"}
@@ -212,17 +213,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def draft_skill(self, source):
         if not self.slots.acquire(blocking=False):
-            raise RuntimeError('Codex 忙碌中，請稍後再預覽。')
+            raise RuntimeError('AI 忙碌中，請稍後再預覽。')
         try:
             prompt = ('根據下方引文，擬出一份完整且可直接取代原文的 SKILL.md。'
                       '請釐清含糊的觸發條件與步驟、刪除重複內容，保留既有用途、語言、限制和前置資料。'
                       '只在 markdown 欄位回傳完整草稿。以下是原文引文：\n\n' + source)
-            response = ask_codex(self.clis['Codex'], prompt, 'revision')['revision']
+            name = next(iter(self.clis))
+            ask = ask_claude if name == 'Claude Code' else ask_codex
+            response = ask(self.clis[name], prompt, 'revision')['revision']
             return response.get('markdown') if isinstance(response, dict) else None
         except subprocess.TimeoutExpired as error:
-            raise RuntimeError('Codex 草擬逾時，請重試。') from error
+            raise RuntimeError('AI 草擬逾時，請重試。') from error
         except (OSError, ValueError) as error:
-            raise RuntimeError('無法讀取 Codex 草稿，請重試。') from error
+            raise RuntimeError('無法讀取 AI 草稿，請重試。') from error
         finally:
             self.slots.release()
 
@@ -244,7 +247,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.clis:
             actions["/api/library/first-guides"] = self.library.claim_first_guides
         if self.effects:
-            draft = self.draft_skill if "Codex" in self.clis else None
+            draft = self.draft_skill if self.clis else None
             actions["/api/library/effects-preview"] = lambda data: self.effects.preview(data, draft)
             actions["/api/library/effects-apply"] = self.effects.apply
         action = actions.get(self.path)
@@ -359,7 +362,7 @@ def main():
     instance = digest(str(APP) + "\n" + str(library.home) + "\n" + args.ai)
     version = digest("".join((APP / f).read_text(encoding="utf-8") for f in ("codex_room.py", "local_library.py", "skill_usage.py", "skill_effects.py", "index.html")))
     handler = partial(Handler, clis=clis, slots=threading.BoundedSemaphore(2),
-                      library=library, effects=SkillEffects(library) if args.ai == "codex" else None,
+                      library=library, effects=SkillEffects(library),
                       instance=instance, version=version, room=args.ai)
     server = None
     try:

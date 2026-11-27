@@ -2141,10 +2141,10 @@ function openApply(selected) {
   const books = skills.filter(s => canApply(s) && (!selected || selected.has(s.key)));
   const retire = books.filter(s => stateOf(s) === 'retire'), revise = books.filter(s => stateOf(s) === 'revise');
   const env = localRoom ? (roomKind === 'claude' ? 'claude-desktop' : 'codex-local') : envPick || detectEnv() || 'claude-desktop';
-  const direct = localRoom && roomKind === 'codex';
+  const direct = localRoom && !!roomKind;
   const prompt = applyPrompt(env, retire, revise);
   $('asub').textContent = `${ENVS[env].icon} ${ENVS[env].name}`;
-  $('abody').innerHTML = retire.length + revise.length ? `${direct ? `<p class="lead">先預覽封存路徑和 Codex 修改草稿，再確認套用。</p>
+  $('abody').innerHTML = retire.length + revise.length ? `${direct ? `<p class="lead">先預覽封存路徑和 ${esc(aiLabel())} 的修改草稿，再確認套用。</p>
     <button class="bigbtn" id="startEffects">開始生效</button>` : `<p class="lead">複製指令貼給你的 AI，套用封存並產生待修建議。</p>`}
     <div class="pbox"><div class="ptitle"><b>複製這段，貼給你的 AI</b><button class="copyp" id="acopy">複製指令</button></div><pre>${esc(prompt)}</pre></div>
     <div class="statgrid" style="margin-top:14px"><div><b>${retire.length}</b>封存</div><div><b>${revise.length}</b>待修</div><div><b>${skills.length - retire.length - revise.length}</b>不動</div></div>

@@ -1,4 +1,4 @@
-"""Read the fixed Codex sources and persist the local room, schema v1."""
+"""Read this room's own AI sources (~/.codex or ~/.claude) and persist the local room, schema v1."""
 
 from contextlib import contextmanager
 from datetime import datetime, timezone

@@ -1,4 +1,4 @@
-"""Prepare and apply explicit changes to personal Codex Skills."""
+"""Prepare and apply explicit changes to personal Codex or Claude Skills."""
 
 import codecs
 from difflib import unified_diff
@@ -51,7 +51,7 @@ def source_snapshot(path, max_bytes=None):
 
 def replacement(original, draft):
     if not isinstance(draft, str) or not draft.strip() or '\0' in draft:
-        raise ValueError('Codex 未回傳可用的修改草稿。')
+        raise ValueError('AI 未回傳可用的修改草稿。')
     before = original.decode('utf-8-sig')
     front = FRONT_MATTER.match(before)
     if front:
@@ -93,15 +93,16 @@ def write_replacement(path, original, data, mode):
 class SkillEffects:
     def __init__(self, library):
         self.library = library
-        self.root = library.home / '.codex'
+        self.folder = '.' + library.kind  # .codex or .claude
+        self.root = library.home / self.folder
         self.previews = {}
         self.lock = threading.Lock()
 
     def resolve(self, book):
         path = Path(book['path'])
         parts = path.parts
-        if len(parts) != 4 or parts[:2] != ('.codex', 'skills') or parts[2].startswith('.') or parts[3] != 'SKILL.md':
-            raise ValueError('只能套用本機 Codex 的個人 Skill。')
+        if len(parts) != 4 or parts[:2] != (self.folder, 'skills') or parts[2].startswith('.') or parts[3] != 'SKILL.md':
+            raise ValueError('只能套用這間書房自己的個人 Skill。')
         plain_directory(self.root / 'skills')
         folder = plain_directory(self.library.home / path.parent)
         return folder / 'SKILL.md'
@@ -144,7 +145,7 @@ class SkillEffects:
                     revised = None
                 else:
                     if not draft_skill:
-                        raise ValueError('找不到本機 Codex，可使用複製指令。')
+                        raise ValueError('找不到這間書房的 AI，可使用複製指令。')
                     if redact(source)[1]:
                         raise ValueError('原文含需遮蔽的資訊，可使用複製指令。')
                     revised, item['diff'] = replacement(original, draft_skill(source))
