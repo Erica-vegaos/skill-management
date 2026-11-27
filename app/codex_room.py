@@ -2,16 +2,24 @@
 """Serve the skill room on loopback; guides are written by your local Codex or Claude Code CLI."""
 
 import argparse
+import errno
 from functools import partial
 from http import HTTPStatus
+from http.client import HTTPConnection, HTTPException
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import shutil
+import sqlite3
 import subprocess
+import sys
 import tempfile
 import threading
+import time
+from urllib.parse import parse_qs
 import webbrowser
+
+from local_library import LocalLibrary, digest
 
 
 APP = Path(__file__).resolve().parent
@@ -24,6 +32,8 @@ ASSETS = {
     **{f"/onboarding/{n}.webp": (f"onboarding/{n}.webp", "image/webp") for n in ("welcome", "step-1", "step-2", "step-3")},
 }
 MAX_REQUEST = 1_000_000
+MAX_MIGRATION = 64 * 1024 * 1024
+SERVICE = "skill-room-v1"
 GUIDE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -99,10 +109,12 @@ def ask_codex(executable, prompt, kind):
 
 
 class Handler(BaseHTTPRequestHandler):
-    def __init__(self, *args, executable, ai, slots, **kwargs):
+    def __init__(self, *args, executable, ai, slots, library, instance, **kwargs):
         self.executable = executable
         self.ai = ai
         self.slots = slots
+        self.library = library
+        self.instance = instance
         super().__init__(*args, **kwargs)
 
     @property
@@ -129,9 +141,18 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get("Host") != self.host:
             self.send_error(HTTPStatus.FORBIDDEN)
             return
-        path = self.path.split("?", 1)[0]
-        if path == "/api/codex/status":
-            self.json_response(HTTPStatus.OK, {"ai": self.ai})
+        path, _, query = self.path.partition("?")
+        if path in ("/api/codex/status", "/api/library"):
+            if (self.headers.get("Origin") not in (None, f"http://{self.host}")
+                    or self.headers.get("Sec-Fetch-Site") not in (None, "same-origin", "none")):
+                self.send_error(HTTPStatus.FORBIDDEN)
+            elif path == "/api/codex/status":
+                self.json_response(HTTPStatus.OK, {
+                    "ai": self.ai, "service": SERVICE, "instance": self.instance,
+                })
+            else:
+                revision = parse_qs(query).get("revision", [None])[0]
+                self.library_response(self.library.read, revision)
             return
         if path not in ASSETS:
             self.send_error(HTTPStatus.NOT_FOUND)
@@ -142,13 +163,34 @@ class Handler(BaseHTTPRequestHandler):
         except FileNotFoundError:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
+        if filename == "index.html":
+            data = data.replace(b"<!-- local-room-service -->", b'<meta name="skill-room-local" content="v1">', 1)
         self.respond(HTTPStatus.OK, data, mime)
+
+    def library_response(self, action, payload):
+        try:
+            result = action(payload)
+        except ValueError as error:
+            self.json_response(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+        except (sqlite3.Error, OSError) as error:
+            self.log_error("Local library: %s", type(error).__name__)
+            self.json_response(HTTPStatus.INTERNAL_SERVER_ERROR, {
+                "error": "無法讀寫本機書房資料庫。請確認 ~/.skill-room 的權限與可用空間。",
+            })
+        else:
+            self.json_response(HTTPStatus.OK, result)
 
     def do_POST(self):
         if self.headers.get("Host") != self.host or self.headers.get("Origin") != f"http://{self.host}":
             self.send_error(HTTPStatus.FORBIDDEN)
             return
-        if self.path != "/api/codex/ask" or not self.executable:
+        actions = {
+            "/api/library/save": self.library.save,
+            "/api/library/refresh": lambda _: self.library.refresh(),
+            "/api/library/migrate": self.library.migrate,
+        }
+        action = actions.get(self.path)
+        if not action and (self.path != "/api/codex/ask" or not self.executable):
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         if self.headers.get_content_type() != "application/json":
@@ -156,19 +198,23 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             size = int(self.headers.get("Content-Length", "0"))
-            if not 0 < size <= MAX_REQUEST:
+            if not 0 < size <= (MAX_MIGRATION if self.path == "/api/library/migrate" else MAX_REQUEST):
                 raise ValueError
             self.connection.settimeout(15)
             data = json.loads(self.rfile.read(size))
             if not isinstance(data, dict):
                 raise ValueError
-            kind, prompt = data.get("kind"), data.get("prompt")
-            if kind not in ("guide", "explain") or not isinstance(prompt, str) or not prompt.strip():
-                raise ValueError
         except (ValueError, TimeoutError):
             self.json_response(HTTPStatus.BAD_REQUEST, {"error": "送出的內容空白、過長或格式不正確。"})
             return
         self.connection.settimeout(None)
+        if action:
+            self.library_response(action, data)
+            return
+        kind, prompt = data.get("kind"), data.get("prompt")
+        if kind not in ("guide", "explain") or not isinstance(prompt, str) or not prompt.strip():
+            self.json_response(HTTPStatus.BAD_REQUEST, {"error": "請提供有效的導讀或解釋需求。"})
+            return
         if not self.slots.acquire(blocking=False):
             self.json_response(HTTPStatus.TOO_MANY_REQUESTS, {"error": "Codex 正在處理其他需求，請稍後再試。"})
             return
@@ -187,6 +233,33 @@ class Handler(BaseHTTPRequestHandler):
             self.slots.release()
 
 
+def existing_room(port, instance):
+    # A parallel launcher may have bound the port and still be scanning sources.
+    deadline = time.monotonic() + 4
+    while time.monotonic() < deadline:
+        connection = HTTPConnection("127.0.0.1", port, timeout=0.5)
+        try:
+            connection.request("GET", "/api/codex/status")
+            response = connection.getresponse()
+            if response.status != 200:
+                return False
+            status = json.loads(response.read(4096))
+            return isinstance(status, dict) and status.get("service") == SERVICE and status.get("instance") == instance
+        except (ConnectionRefusedError, TimeoutError):
+            time.sleep(0.1)
+        except (OSError, HTTPException, ValueError):
+            return False
+        finally:
+            connection.close()
+    return False
+
+
+def open_room(url, should_open):
+    print(f"規範書房 · {url}", flush=True)
+    if should_open and not webbrowser.open(url):
+        print("無法自動開啟瀏覽器。請複製上方網址到瀏覽器。", flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8765)
@@ -194,16 +267,43 @@ def main():
     parser.add_argument("--ai", choices=["auto", "codex", "claude"], default="auto",
                         help="誰來寫導讀：預設先找 Codex，再找 Claude Code")
     args = parser.parse_args()
+    if not 0 <= args.port <= 65535:
+        parser.error("--port 必須介於 0 和 65535。")
     order = {"auto": ["codex", "claude"], "codex": ["codex"], "claude": ["claude"]}[args.ai]
     executable, ai = next(((shutil.which(n), n) for n in order if shutil.which(n)), (None, None))
     ai = {"codex": "Codex", "claude": "Claude Code"}.get(ai)
     print(f"導讀由 {ai} 撰寫。" if ai else "找不到 Codex 或 Claude Code：書房照常開啟，導讀改用「複製到 ChatGPT」。", flush=True)
-    handler = partial(Handler, executable=executable, ai=ai, slots=threading.BoundedSemaphore(2))
-    with ThreadingHTTPServer(("127.0.0.1", args.port), handler) as server:
-        url = f"http://127.0.0.1:{server.server_port}/"
-        print(f"Codex 書房 · {url}", flush=True)
-        if not args.no_open:
-            webbrowser.open(url)
+    library = LocalLibrary(Path.home())
+    instance = digest(str(APP) + "\n" + str(library.home))
+    handler = partial(Handler, executable=executable, ai=ai, slots=threading.BoundedSemaphore(2),
+                      library=library, instance=instance)
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", args.port), handler)
+    except OSError as error:
+        if error.errno != errno.EADDRINUSE:
+            print(f"無法啟動規範書房：{error.strerror}", file=sys.stderr)
+            return 1
+        if existing_room(args.port, instance):
+            print("規範書房已在執行，使用原本的服務。", flush=True)
+            open_room(f"http://127.0.0.1:{args.port}/", not args.no_open)
+            return 0
+        alternate = 8765 if args.port == 8766 else 8766
+        print(f"連接埠 {args.port} 已被其他程式或另一個書房占用。"
+              "請先關閉占用的程式（舊書房可在原終端按 Ctrl+C），"
+              f"或在終端執行 python3 app/codex_room.py --port {alternate}。", file=sys.stderr)
+        return 1
+    with server:
+        try:
+            library.initialise()
+            scan = library.refresh()["room"]["scan"]
+        except (sqlite3.Error, OSError) as error:
+            print(f"無法讀寫 ~/.skill-room 的資料庫（{type(error).__name__}）。"
+                  "請確認資料夾權限與可用磁碟空間。", file=sys.stderr)
+            return 1
+        print(f"已載入 {scan['found']} 份 Codex 文件，略過 {scan['blank']} 份空白檔。", flush=True)
+        for error in scan["errors"]:
+            print(error, file=sys.stderr)
+        open_room(f"http://127.0.0.1:{server.server_port}/", not args.no_open)
         try:
             server.serve_forever()
         except KeyboardInterrupt:
@@ -211,4 +311,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
