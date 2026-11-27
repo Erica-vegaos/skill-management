@@ -690,15 +690,17 @@ let aiName = '';
 const aiLabel = () => aiName || 'AI';
 const aiAccount = () => aiName === 'Claude'
   ? '中文導讀和解釋使用你自己的 Claude 帳號。'
-  : aiName === 'Codex'
-    ? '按下產生導讀或解釋時，會用你登入的 Codex CLI 帳號處理送出的內容。'
+  : localAI()
+    ? `按下產生導讀或解釋時，會用你電腦上登入的 ${aiName} 帳號處理送出的內容。`
     : '可以把已遮蔽的原文與問題複製到 ChatGPT。';
 
 async function codexSample() {
   if (location.protocol !== 'http:' || location.hostname !== '127.0.0.1') return null;
   try {
     const status = await fetch('/api/codex/status', {signal: AbortSignal.timeout(2000)});
-    if (!status.ok || !(await status.json()).codex) return null;
+    if (!status.ok) return null;
+    var localName = (await status.json()).ai;
+    if (!localName) return null;
   } catch { return null; }
 
   async function ask(kind, input) {
@@ -711,7 +713,7 @@ async function codexSample() {
       body: JSON.stringify({kind, prompt}),
     });
     const data = await response.json();
-    if (!response.ok) throw Object.assign(new Error(data.error || 'Codex 未完成回覆。'), {code: 'codex_error'});
+    if (!response.ok) throw Object.assign(new Error(data.error || 'AI 未完成回覆。'), {code: 'codex_error'});
     return data;
   }
 
@@ -721,6 +723,7 @@ async function codexSample() {
     return data;
   };
   sample.json = async input => (await ask('guide', input)).guide;
+  sample.ai = localName;
   return sample;
 }
 
@@ -758,7 +761,7 @@ async function boot() {
   } else loadLocal();
   try { sampleFn = await window.claude?.use?.('sample'); } catch {}
   if (sampleFn) aiName = 'Claude';
-  else if ((sampleFn = await codexSample())) aiName = 'Codex';
+  else if ((sampleFn = await codexSample())) aiName = sampleFn.ai;
   try { desktop = await window.claude?.use?.('desktop'); } catch {}
   $('extab').textContent = aiName ? `請 ${aiName} 解釋` : '解釋';
   render(); if (openKey) renderSheet();
@@ -912,7 +915,8 @@ const ENVS = {
   'codex-web': {icon: '🌐', name: 'Codex 雲端', sub: 'chatgpt.com 的 Codex、ChatGPT'}
 };
 let envPick = ls.get('sr-env', null);
-const detectEnv = () => db ? 'claude-web' : aiName === 'Codex' ? 'codex-local' : null;
+const localAI = () => aiName === 'Codex' || aiName === 'Claude Code';
+const detectEnv = () => db ? 'claude-web' : aiName === 'Codex' ? 'codex-local' : aiName === 'Claude Code' ? 'claude-desktop' : null;
 function openImport() { incoming = []; pasted = []; open('importer'); renderImport(); }
 function stepStrip(cur) {
   const names = ['選你用的 AI', '複製指令給它', '確認後搬進來'];
@@ -1061,7 +1065,7 @@ zone：support=客服、Agent、知識庫、客戶服務；writing=文章、文�
 
 === 原文：${s.name} ===
 ${s.raw.slice(0, 40000)}`;
-  const c = await sampleFn.json(aiName === 'Codex' ? redact(prompt).text : prompt, {cache: false});
+  const c = await sampleFn.json(localAI() ? redact(prompt).text : prompt, {cache: false});
   const pickStr = v => typeof v === 'string' ? v.slice(0, 600) : '';
   return {alias: pickStr(c.alias).slice(0, 16) || s.alias, zone: ZONES[c.zone] ? c.zone : s.zone,
     chinese: {source_hash: s.hash, one: pickStr(c.one), when: pickStr(c.when), summary: pickStr(c.summary), important: pickStr(c.important), caution: pickStr(c.caution), importance: clamp5(+c.importance || 3), priority: clamp5(+c.priority || 3)}};
@@ -1077,8 +1081,8 @@ async function pumpTranslate() {
       try { const r = await translateOne(s); const cur = skills.find(x => x.key === s.key) || s; await putSkill({...cur, ...r}); break; }
       catch (e) {
         if (e?.code === 'not_granted') { aiDenied = true; break; }
-        if (aiName === 'Codex') {
-          toast(e?.code === 'codex_error' ? e.message : 'Codex 導讀未完成，請重試');
+        if (localAI()) {
+          toast(e?.code === 'codex_error' ? e.message : aiName + ' 導讀未完成，請重試');
           tq.running = false; render(); return;
         }
         if (e?.code === 'rate_limited') { toast(e.reason === 'usage_limit' ? 'Claude 額度用完了，剩下的之後再寫' : 'Claude 有點忙，稍等一下'); if (e.reason === 'usage_limit') { aiDenied = true; break; } await new Promise(r => setTimeout(r, 20000)); }
@@ -1365,7 +1369,7 @@ async function explain(s, follow) {
   const prior = explains[s.key]?.hash === s.hash ? explains[s.key].text : '';
   const base = explainPrompt(s);
   const input = follow ? [{role: 'user', content: base}, {role: 'assistant', content: prior}, {role: 'user', content: follow + '\n（請只根據原文回答，繁體中文，簡潔。）'}] : base;
-  const cleaned = aiName !== 'Codex' ? input : typeof input === 'string'
+  const cleaned = !localAI() ? input : typeof input === 'string'
     ? redact(input).text
     : input.map(message => ({...message, content: redact(message.content).text}));
   streaming = {key: s.key, text: ''}; tab = 'ex'; renderSheet();
@@ -1628,7 +1632,7 @@ async function readerAsk() {
   const at = r.pi, answers = r.ask;
   answers[at] = {text: ''}; renderReader();
   try {
-    await sampleFn(aiName === 'Codex' ? redact(prompt).text : prompt, {
+    await sampleFn(localAI() ? redact(prompt).text : prompt, {
       cache: false, onText: ({text}) => {
         answers[at].text = text;
         if (rd === r && r.ask === answers && r.pi === at) {
