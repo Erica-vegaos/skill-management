@@ -218,6 +218,8 @@ class Handler(BaseHTTPRequestHandler):
             "/api/library/save": self.library.save,
             "/api/library/refresh": lambda _: self.library.refresh(),
             "/api/library/migrate": self.library.migrate,
+            "/api/library/usage": lambda _: {'result': self.library.usage()},
+            "/api/library/stage-archive": self.library.stage_archive,
         }
         if self.clis:
             actions["/api/library/first-guides"] = self.library.claim_first_guides
@@ -331,7 +333,7 @@ def main():
           else f"{room}：讀 ~/.{args.ai}。找不到 {NAMES[args.ai]}，導讀改用「複製到 ChatGPT」。", flush=True)
     library = LocalLibrary(Path.home(), args.ai)
     instance = digest(str(APP) + "\n" + str(library.home) + "\n" + args.ai)
-    version = digest("".join((APP / f).read_text(encoding="utf-8") for f in ("codex_room.py", "local_library.py", "index.html")))
+    version = digest("".join((APP / f).read_text(encoding="utf-8") for f in ("codex_room.py", "local_library.py", "skill_usage.py", "index.html")))
     handler = partial(Handler, clis=clis, slots=threading.BoundedSemaphore(2),
                       library=library, instance=instance, version=version, room=args.ai)
     server = None
