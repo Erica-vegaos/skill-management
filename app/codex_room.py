@@ -20,6 +20,7 @@ from urllib.parse import parse_qs
 import webbrowser
 
 from local_library import LocalLibrary, digest
+from skill_effects import SkillEffects
 
 
 APP = Path(__file__).resolve().parent
@@ -50,6 +51,8 @@ GUIDE_SCHEMA = {
     "additionalProperties": False,
 }
 GUIDE_SCHEMA["required"] = list(GUIDE_SCHEMA["properties"])
+REVISION_SCHEMA = {"type": "object", "properties": {"markdown": {"type": "string"}},
+                   "required": ["markdown"], "additionalProperties": False}
 
 
 PREAMBLE = ("你是規範書房的唯讀導讀員。只依下方提供的資料用繁體中文回答。"
@@ -114,9 +117,9 @@ def ask_codex(executable, prompt, kind):
             "--skip-git-repo-check", "--color", "never", "-C", directory,
             "--output-last-message", str(output),
         ]
-        if kind == "guide":
-            schema = workspace / "guide.json"
-            schema.write_text(json.dumps(GUIDE_SCHEMA), encoding="utf-8")
+        if kind in ("guide", "revision"):
+            schema = workspace / "response.json"
+            schema.write_text(json.dumps(GUIDE_SCHEMA if kind == "guide" else REVISION_SCHEMA), encoding="utf-8")
             command.extend(["--output-schema", str(schema)])
         result = subprocess.run(
             [*command, "-"],
@@ -129,17 +132,18 @@ def ask_codex(executable, prompt, kind):
         text = output.read_text(encoding="utf-8").strip()
         if not text:
             raise RuntimeError("Codex 沒有回傳內容，請再試一次。")
-        return {"guide": json.loads(text)} if kind == "guide" else {"text": text}
+        return {kind: json.loads(text)} if kind in ("guide", "revision") else {"text": text}
 
 
 class Handler(BaseHTTPRequestHandler):
-    def __init__(self, *args, clis, slots, library, instance, version, room, **kwargs):
+    def __init__(self, *args, clis, slots, library, effects, instance, version, room, **kwargs):
         self.room = room
         self.version = version
         self.clis = clis  # {"Codex": path, "Claude Code": path}, preferred first
         self.ai = next(iter(clis), None)
         self.slots = slots
         self.library = library
+        self.effects = effects
         self.instance = instance
         super().__init__(*args, **kwargs)
 
@@ -206,6 +210,22 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.json_response(HTTPStatus.OK, result)
 
+    def draft_skill(self, source):
+        if not self.slots.acquire(blocking=False):
+            raise RuntimeError('Codex 忙碌中，請稍後再預覽。')
+        try:
+            prompt = ('根據下方引文，擬出一份完整且可直接取代原文的 SKILL.md。'
+                      '請釐清含糊的觸發條件與步驟、刪除重複內容，保留既有用途、語言、限制和前置資料。'
+                      '只在 markdown 欄位回傳完整草稿。以下是原文引文：\n\n' + source)
+            response = ask_codex(self.clis['Codex'], prompt, 'revision')['revision']
+            return response.get('markdown') if isinstance(response, dict) else None
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError('Codex 草擬逾時，請重試。') from error
+        except (OSError, ValueError) as error:
+            raise RuntimeError('無法讀取 Codex 草稿，請重試。') from error
+        finally:
+            self.slots.release()
+
     def do_POST(self):
         if self.headers.get("Host") != self.host or self.headers.get("Origin") != f"http://{self.host}":
             self.send_error(HTTPStatus.FORBIDDEN)
@@ -223,6 +243,10 @@ class Handler(BaseHTTPRequestHandler):
         }
         if self.clis:
             actions["/api/library/first-guides"] = self.library.claim_first_guides
+        if self.effects:
+            draft = self.draft_skill if "Codex" in self.clis else None
+            actions["/api/library/effects-preview"] = lambda data: self.effects.preview(data, draft)
+            actions["/api/library/effects-apply"] = self.effects.apply
         action = actions.get(self.path)
         if not action and (self.path != "/api/codex/ask" or not self.clis):
             self.send_error(HTTPStatus.NOT_FOUND)
@@ -333,9 +357,10 @@ def main():
           else f"{room}：讀 ~/.{args.ai}。找不到 {NAMES[args.ai]}，導讀改用「複製到 ChatGPT」。", flush=True)
     library = LocalLibrary(Path.home(), args.ai)
     instance = digest(str(APP) + "\n" + str(library.home) + "\n" + args.ai)
-    version = digest("".join((APP / f).read_text(encoding="utf-8") for f in ("codex_room.py", "local_library.py", "skill_usage.py", "index.html")))
+    version = digest("".join((APP / f).read_text(encoding="utf-8") for f in ("codex_room.py", "local_library.py", "skill_usage.py", "skill_effects.py", "index.html")))
     handler = partial(Handler, clis=clis, slots=threading.BoundedSemaphore(2),
-                      library=library, instance=instance, version=version, room=args.ai)
+                      library=library, effects=SkillEffects(library) if args.ai == "codex" else None,
+                      instance=instance, version=version, room=args.ai)
     server = None
     try:
         server = ThreadingHTTPServer(("127.0.0.1", args.port), handler)

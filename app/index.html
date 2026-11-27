@@ -493,12 +493,12 @@ kbd{display:inline-block;min-width:22px;padding:0 5px;border-radius:5px;border:1
   </main>
 
   <nav class="dock">
-    <button class="go" id="play">決定去留 <span class="n" id="playn">0</span></button>
+    <button class="go" id="play">快速整理 <span class="n" id="playn">0</span></button>
     <button class="go alt" id="readb">細看內文 <span class="n" id="readn">0</span></button>
     <button id="unib">宇宙</button>
     <button id="shelf">書架</button>
     <button id="cleanupb" hidden>快速清理 Skill</button>
-    <button id="askq" aria-label="待解釋">?<span class="n" id="askn">0</span></button>
+    <button id="askq" title="查看整理時標記為「看不懂」的 Skill">待解釋 <span class="n" id="askn">0</span></button>
     <button class="go" id="trb" hidden>寫中文導讀 <span class="n" id="trn">0</span></button>
   </nav>
   <div class="sync" id="sync"><span class="dot"></span><span id="synctext">連線中…</span></div>
@@ -1445,7 +1445,6 @@ function renderMine() {
       ${applyCounts.some(Boolean) ? `<button class="bigbtn" id="mapply">讓整理生效・${applyCounts[0]} 封存 ${applyCounts[1]} 待修</button>` : ''}
       ${localRoom ? localControls : '<button class="bigbtn" id="mimp">' + (skills.length ? '更新我的 Skill' : '搬進我的 Skill') + '</button>'}
       ${!db && hasBrowserBooks ? '<button class="bigbtn ghost" id="mexport">下載這個瀏覽器的舊資料備份</button>' : ''}
-      ${untr && sampleFn ? `<button class="bigbtn ghost" id="mtr" ${tq.running ? 'disabled' : ''}>${tq.running ? `${aiLabel()} 正在寫 ${tq.done}/${tq.total}` : `讓 ${aiLabel()} 寫 ${untr} 本導讀`}</button>` : ''}
       ${!localRoom && skills.length ? `<button class="bigbtn danger ${wipeArmed ? 'armed' : ''}" id="mwipe">${wipeArmed ? '再按一次：永久刪除全部資料' : '刪除我的書房'}</button>` : ''}
     </div>
     ${localRoom ? '<p class="note">舊資料以副本保留。若舊資料在另一個瀏覽器或網址，請在原處下載舊資料備份，再到這裡匯入。</p>' : ''}
@@ -1466,7 +1465,6 @@ function renderMine() {
     sampleFn.ai = aiName = b.dataset.ai; ls.set('sr-ai', aiName);
     $('extab').textContent = `請 ${aiName} 解釋`; render(); renderMine(); toast(`之後改用 ${aiName} 寫`);
   });
-  $('mtr') && ($('mtr').onclick = pumpTranslate);
   $('mwipe') && ($('mwipe').onclick = async () => {
     if (!wipeArmed) { wipeArmed = true; renderMine(); setTimeout(() => { wipeArmed = false; if ($('mine').classList.contains('on')) renderMine(); }, 5000); return; }
     wipeArmed = false; $('mwipe').disabled = true; $('mwipe').textContent = '刪除中…'; await wipeAll(); close('mine'); toast('書房已清空');
@@ -1570,7 +1568,7 @@ async function explain(s, follow) {
   }
 }
 
-/* ---------- Tidy: dating-app style 決定去留 ---------- */
+/* ---------- Tidy: 快速整理 ---------- */
 const DAY = 864e5;
 function ago(iso) {
   if (!iso) return '';
@@ -2143,16 +2141,68 @@ function openApply(selected) {
   const books = skills.filter(s => canApply(s) && (!selected || selected.has(s.key)));
   const retire = books.filter(s => stateOf(s) === 'retire'), revise = books.filter(s => stateOf(s) === 'revise');
   const env = localRoom ? (roomKind === 'claude' ? 'claude-desktop' : 'codex-local') : envPick || detectEnv() || 'claude-desktop';
+  const direct = localRoom && roomKind === 'codex';
   const prompt = applyPrompt(env, retire, revise);
   $('asub').textContent = `${ENVS[env].icon} ${ENVS[env].name}`;
-  $('abody').innerHTML = retire.length + revise.length ? `<p class="lead">書房只記得你的決定。複製這段貼給你的 AI，它會幫你真的${env === 'claude-web' ? '停用' : '移走'}封存的 Skill，並針對待修的給建議。</p>
+  $('abody').innerHTML = retire.length + revise.length ? `${direct ? `<p class="lead">先預覽封存路徑和 Codex 修改草稿，再確認套用。</p>
+    <button class="bigbtn" id="startEffects">開始生效</button>` : `<p class="lead">複製指令貼給你的 AI，套用封存並產生待修建議。</p>`}
     <div class="pbox"><div class="ptitle"><b>複製這段，貼給你的 AI</b><button class="copyp" id="acopy">複製指令</button></div><pre>${esc(prompt)}</pre></div>
     <div class="statgrid" style="margin-top:14px"><div><b>${retire.length}</b>封存</div><div><b>${revise.length}</b>待修</div><div><b>${skills.length - retire.length - revise.length}</b>不動</div></div>
     ${localRoom ? '<p class="note">封存後回到「我的書房」重新掃描。本次封存可從 skills-archive 搬回。</p>' : `<p class="note">你在哪裡用 AI？</p><div class="chips">${Object.entries(ENVS).map(([k, e]) => `<button data-aenv="${k}" aria-pressed="${k === env}">${e.icon} ${e.name}</button>`).join('')}</div>`}`
     : '<p class="empty">還沒有封存或待修的書。去咖啡廳翻幾張再回來。</p>';
+  if ($('startEffects')) $('startEffects').onclick = () => previewEffects([...retire, ...revise].map(s => s.key));
   $('acopy') && ($('acopy').onclick = async () => { try { await navigator.clipboard.writeText(prompt); $('acopy').textContent = '已複製'; blip('done'); } catch { window.prompt('複製下面的內容', prompt); } });
   $('abody').querySelectorAll('[data-aenv]').forEach(b => b.onclick = () => { envPick = b.dataset.aenv; ls.set('sr-env', envPick); openApply(); });
   open('applyp');
+}
+
+async function previewEffects(keys) {
+  const button = $('startEffects');
+  button.disabled = true;
+  button.textContent = '正在準備預覽…';
+  try {
+    const {result} = await libraryRequest('/api/library/effects-preview', {keys});
+    if ($('startEffects') === button && $('applyp').classList.contains('on')) renderEffectPreview(result, keys);
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = '開始生效';
+    toast(error.message);
+  }
+}
+
+function renderEffectPreview({token, items}, keys) {
+  const body = $('abody');
+  body.innerHTML = `<p class="lead">預覽變更</p><p class="note">勾選要套用的項目。確認後會備份原檔，再寫回草稿或搬移資料夾。</p>
+    ${items.map(item => `<div class="pbox"><div class="ptitle"><b>${esc(item.path || '已變更的 Skill')}</b></div>
+      ${item.error ? `<pre>${esc(item.error)}</pre>` : `<label class="bigbtn ghost"><input type="checkbox" data-effect="${esc(item.key)}" checked> ${item.action === 'retire' ? '封存' : '修改'}</label>
+        <pre>${esc(item.diff || `移至 ~/${item.target}`)}</pre>`}</div>`).join('')}
+    ${token ? '<button class="bigbtn" id="confirmEffects">確認套用</button>' : ''}
+    <button class="bigbtn ghost" id="cancelEffects">返回整理</button>`;
+  $('cancelEffects').onclick = () => openApply(new Set(keys));
+  const confirm = $('confirmEffects');
+  if (!confirm) return;
+  const checked = () => [...body.querySelectorAll('[data-effect]:checked')].map(box => box.dataset.effect);
+  body.onchange = () => { confirm.disabled = checked().length === 0; };
+  confirm.onclick = async () => {
+    confirm.disabled = true;
+    confirm.textContent = '正在套用…';
+    const selected = checked();
+    body.querySelectorAll('button, input').forEach(control => { control.disabled = true; });
+    try {
+      renderEffectResults(await editLibrary('effects-apply', {token, keys: selected}));
+    } catch (error) {
+      if (confirm.isConnected) renderEffectResults({items: [], warning: error.message});
+    }
+  };
+}
+
+function renderEffectResults({items, warning}) {
+  const failed = items.filter(item => item.error).length;
+  $('abody').innerHTML = `<p class="lead">完成 ${items.length - failed} 項 · 失敗 ${failed} 項</p>
+    ${warning ? `<p class="note">${esc(warning)}</p>` : ''}
+    ${items.map(item => `<div class="pbox"><div class="ptitle"><b>${esc(item.path)}</b></div><pre>${esc(item.error || (item.target
+      ? `已封存至 ~/${item.target}\n將該資料夾搬回原位置即可復原。`
+      : '已寫回草稿。以備份取代目前的 SKILL.md 即可復原。'))}${item.backup ? `\n備份：~/${esc(item.backup)}` : ''}</pre></div>`).join('')}`;
 }
 
 /* ---------- Toast / undo ---------- */
