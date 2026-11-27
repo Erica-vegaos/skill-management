@@ -1,11 +1,14 @@
 # 規範書房 · Skill Room
 
-在書房閱讀、標記和整理你的 AI 規範（`SKILL.md`、`AGENTS.md`）。
+在書房閱讀、標記和整理你的 AI 規範（`SKILL.md`、`AGENTS.md`、`CLAUDE.md`），Codex 和 Claude 都適用。
 Read and organize your AI agent skills in a cozy library.
 
-## 貼給本機 Codex，一次安裝並開啟
+## 貼給你的 AI，一次安裝並開啟
 
-在能操作你電腦檔案和終端的 Codex app 或 CLI 裡，整段貼上：
+不用會 GitHub。打開下面任一個，整段貼上：
+
+- **Codex**：Codex app 或 CLI
+- **Claude**：Claude 桌面 app 的「Code」分頁，或終端裡的 Claude Code（一般聊天分頁碰不到你電腦的檔案，不能用）
 
 ```text
 請在我的電腦安裝並開啟「規範書房」。
@@ -14,7 +17,12 @@ Read and organize your AI agent skills in a cozy library.
 3. 開啟 http://127.0.0.1:8765/。從書房畫面或啟動日誌核對載入份數與錯誤，回報網址和結果。不用打包 ZIP、上傳 Skill、選 AI 或產生導讀，也不要變更任何 Skill 原始檔案。
 ```
 
-書房開啟時會自動載入 `~/.codex/skills/*/SKILL.md`、`~/.codex/skills/.system/*/SKILL.md` 和 `~/.codex/AGENTS.md`。空白檔會略過。來源以相對路徑顯示，同名的個人與系統 Skill 各自保留。畫面會顯示載入數量，讀取失敗的原因可在「我的書房」查看。
+書房開啟時會自動載入：
+
+- Codex：`~/.codex/skills/*/SKILL.md`、`~/.codex/skills/.system/*/SKILL.md`、`~/.codex/AGENTS.md`
+- Claude：`~/.claude/skills/*/SKILL.md`、`~/.claude/CLAUDE.md`
+
+空白檔會略過。來源以相對路徑顯示，同名的個人與系統 Skill 各自保留。畫面會顯示載入數量，讀取失敗的原因可在「我的書房」查看。
 
 ## 怎麼開 · Run it
 

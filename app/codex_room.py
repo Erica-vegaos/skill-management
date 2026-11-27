@@ -300,7 +300,7 @@ def main():
             print(f"無法讀寫 ~/.skill-room 的資料庫（{type(error).__name__}）。"
                   "請確認資料夾權限與可用磁碟空間。", file=sys.stderr)
             return 1
-        print(f"已載入 {scan['found']} 份 Codex 文件，略過 {scan['blank']} 份空白檔。", flush=True)
+        print(f"已載入 {scan['found']} 份本機 Skill 文件（Codex、Claude），略過 {scan['blank']} 份空白檔。", flush=True)
         for error in scan["errors"]:
             print(error, file=sys.stderr)
         open_room(f"http://127.0.0.1:{server.server_port}/", not args.no_open)

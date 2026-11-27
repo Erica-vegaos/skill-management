@@ -83,7 +83,8 @@ def body_fields(raw):
 def read_source(path, home):
     relative = path.relative_to(home).as_posix()
     resolved = path.resolve(strict=True)
-    resolved.relative_to(home / '.codex')
+    if not any(resolved.is_relative_to(home / folder) for folder in AI_FOLDERS):
+        raise ValueError('outside')
     if not stat.S_ISREG(resolved.stat().st_mode):
         raise ValueError('來源必須是一般檔案')
     with resolved.open(encoding='utf-8-sig', newline='') as stream:
@@ -91,7 +92,7 @@ def read_source(path, home):
         modified = datetime.fromtimestamp(os.fstat(stream.fileno()).st_mtime, timezone.utc).isoformat()
     if not raw.strip():
         return None
-    agents = path.name == 'AGENTS.md'
+    agents = path.name in ('AGENTS.md', 'CLAUDE.md')
     name = path.name if agents else path.parent.name
     front_matter = re.match(r'^---\s*\n([\s\S]*?)\n---', raw)
     description = re.search(r'^description:\s*(.+)$', front_matter[1], re.M) if front_matter else None
@@ -105,13 +106,16 @@ def read_source(path, home):
     }
 
 
+AI_FOLDERS = ('.codex', '.claude')
+
+
 def scan_sources(home):
-    codex = home / '.codex'
-    paths = [codex / 'AGENTS.md']
+    codex, claude = home / '.codex', home / '.claude'
+    paths = [codex / 'AGENTS.md', claude / 'CLAUDE.md']
     errors = []
-    for root in (codex / 'skills', codex / 'skills' / '.system'):
+    for base, root in ((codex, codex / 'skills'), (codex, codex / 'skills' / '.system'), (claude, claude / 'skills')):
         try:
-            root.resolve(strict=True).relative_to(codex)
+            root.resolve(strict=True).relative_to(base)
             paths.extend(entry / 'SKILL.md' for entry in sorted(root.iterdir())
                          if not entry.name.startswith('.') and entry.is_dir())
         except FileNotFoundError:
@@ -142,7 +146,7 @@ def error_reason(error):
     if isinstance(error, PermissionError):
         return '沒有讀取權限'
     if isinstance(error, ValueError):
-        return '來源超出 ~/.codex 或不是一般檔案'
+        return '來源超出 ~/.codex、~/.claude 或不是一般檔案'
     return '無法讀取來源'
 
 
